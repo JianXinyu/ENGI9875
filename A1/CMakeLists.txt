@@ -4,6 +4,8 @@
  add_library(${TARGET_NAME}
          STATIC
          aircraft.c
+         airport.c
+         flight.c
          )
 
  target_include_directories(${TARGET_NAME}
