@@ -10,7 +10,7 @@ struct aircraft{
 
 struct aircraft* ac_create(enum aircraft_kind kind, const char *reg)
 {
-    struct aircraft *ac = NULL;
+    struct aircraft *ac = malloc(sizeof(struct aircraft));
     ac->kind_ = kind;
     ac->regcode_ = reg;
     ac->refcount_ = 0;

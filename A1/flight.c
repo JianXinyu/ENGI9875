@@ -3,37 +3,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum aircraft_kind {
-    /* A fixed-wing aircraft */
-    AC_FIXED,
 
-    /* Gyrocopter */
-    AC_GYRO,
-
-    /* A rotary-wing aircraft, i.e., a helicopter */
-    AC_ROTARY,
-
-    /* A tilt-rotor aircraft, e.g., an Osprey */
-    AC_TILT,
-};
-
-struct aircraft{
-    enum aircraft_kind kind_;
-    const char *regcode_;
-    unsigned int refcount_;
-};
-
-
-
-struct flight*	flight_create(const char *airline, uint16_t number,
-                                const struct airport *stops[])
+struct flight*	flight_create(const char *airline, uint16_t number, struct airport *stops[])
 {
     struct flight *flt = malloc(sizeof(struct flight));
     strcpy(flt->f_airline, airline);
 // flt->airline[2] = '\0';
     flt->f_number = number;
-    flt->f_stops = stops;
+    flt->f_stop_count = 0;
 
+    memccpy(flt->f_stops, stops, '\0', 1000);
     return flt;
 }
 
@@ -44,12 +23,7 @@ void flight_free(struct flight* flt)
 
 void flight_change_equipment(struct flight* flt, struct aircraft* ac)
 {
-    if(ac)
-    {
-        ac->refcount_--;
-    }
     flt->f_aircraft = ac;
-
 }
 
 char* flight_code(const struct flight* flt)

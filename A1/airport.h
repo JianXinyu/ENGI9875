@@ -28,7 +28,7 @@ const char*	ap_code(const struct airport*);
  *              not include this airport as a stop) or on failure to
  *              allocate memory
  */
-int		ap_add_flight(struct flight*);
+int		ap_add_flight(struct airport*, struct flight*);
 
 /** Increment a airport's refcount. */
 void		ap_hold(struct airport*);

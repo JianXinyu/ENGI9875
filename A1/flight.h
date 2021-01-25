@@ -41,7 +41,7 @@ struct flight {
  * the airports, which are assumed to live at least as long as the flight.
  */
 struct flight*	flight_create(const char *airline, uint16_t number,
-                                const struct airport *stops[]);
+                                 struct airport *stops[]);
 
 /**
  * Release a flight.
