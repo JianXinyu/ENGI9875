@@ -5,7 +5,7 @@ add_subdirectory(A1)
 
 add_executable(${PROJECT_NAME} main.c)
 
-target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra -pedantic -Werror)
+target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra -pedantic -Wno-error)
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC

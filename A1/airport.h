@@ -6,7 +6,7 @@
 #ifndef AIRPORT_H_
 #define AIRPORT_H_
 
-#include <stdint.h>
+#include <stddef.h>
 
 #include "flight.h"
 
@@ -29,6 +29,17 @@ const char*	ap_code(const struct airport*);
  *              allocate memory
  */
 int		ap_add_flight(struct airport*, struct flight*);
+
+/**
+ * Copy pointers to flights into a caller-provided array.
+ *
+ * @param   ap      The airport to query
+ * @param   fpp     Array of flight pointers to copy flight data into
+ * @param   n       Number of elements in the passed-in array. If too small
+ *                  to hold all of the flights, this will be set to the minimum
+ *                  size required.
+ */
+void		ap_flights(struct airport *ap, struct flight **fpp, size_t *n);
 
 /** Increment a airport's refcount. */
 void		ap_hold(struct airport*);

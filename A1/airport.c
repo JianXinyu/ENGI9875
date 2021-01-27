@@ -1,17 +1,22 @@
 #include "airport.h"
 #include <stdlib.h>
+#include <string.h>
 struct airport{
-    const char *ap_code;
-    unsigned int refcount_;
-    struct flight * flights[6];
+    char *ap_code;
+    unsigned int refcount_; // how many things refer to this airport
+    unsigned int flt_count;
+    struct flight *flights[];
 };
 
 struct airport*	ap_create(const char *icao_code)
 {
     struct airport *ap = malloc(sizeof(struct airport));
-    ap->ap_code = icao_code;
-    ap->refcount_ = 0;
-
+//    strcpy(ap->ap_code, icao_code);
+//ap->ap_code = NULL;
+//ap->ap_code = icao_code;
+    ap->ap_code = strdup(icao_code);
+    ap->refcount_ = 1;
+    ap->flt_count = 0;
     return ap;
 }
 
@@ -26,19 +31,34 @@ int	ap_add_flight(struct airport *ap, struct flight* flt)
     //flight is invalid: NULL pointer
     if(!flt) return flag;
 
-    int i = 0;
-    while((flt->f_stops[i])->ap_code)
+    for(int i = 0; i < flt->f_stop_count; i++)
     {
-        i++;
-        if((flt->f_stops[i])->ap_code == ap->ap_code)
+        if(flt->f_stops[i]->ap_code == ap->ap_code)
         {
             //success
             flag = 0;
-            ap->flights[ap->refcount_] = flt;
-            ap_hold(ap);
+            ap->flights[ap->flt_count++] = flt;
+            break;
         }
     }
     return flag;
+}
+
+/**
+ * Copy pointers to flights into a caller-provided array.
+ *
+ * @param   ap      The airport to query
+ * @param   fpp     Array of flight pointers to copy flight data into
+ * @param   n       Number of elements in the passed-in array. If too small
+ *                  to hold all of the flights, this will be set to the minimum
+ *                  size required.
+ */
+
+void ap_flights(struct airport *ap, struct flight **fpp, size_t *n)
+{
+    if (*n < ap->flt_count ) *n = ap->flt_count;
+    for(int i = 0; i < ap->flt_count; i++)
+        fpp[i] = ap->flights[i];
 }
 
 void ap_hold(struct airport* ap)

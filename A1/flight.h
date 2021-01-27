@@ -29,7 +29,7 @@ struct flight {
     unsigned int	f_stop_count;
 
     /** Airports this flight stops at (in order). */
-    struct airport	*f_stops;
+    struct airport	**f_stops;
 };
 
 
@@ -41,7 +41,7 @@ struct flight {
  * the airports, which are assumed to live at least as long as the flight.
  */
 struct flight*	flight_create(const char *airline, uint16_t number,
-                                 struct airport *stops[]);
+                                struct airport *stops[]);
 
 /**
  * Release a flight.
