@@ -14,7 +14,6 @@ struct flight*	flight_create(const char *airline, uint16_t number, struct airpor
     while(stops[flt->f_stop_count])
         flt->f_stop_count++;
 
-//    memccpy(flt->f_stops, stops, '\0', 1000);
     flt->f_stops = stops;
 
     return flt;
