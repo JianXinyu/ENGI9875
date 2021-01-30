@@ -1,8 +1,9 @@
 #include "aircraft.h"
 #include "airport.h"
 #include "flight.h"
-
+#include <stdio.h>
 #include <stdlib.h>
+
 int main()
 {
 
@@ -23,7 +24,7 @@ int main()
     for(int i = 0; i < 4; i++)
     {
         ap_add_flight(stops[i], flt);
-        ap_add_flight(stops[i], flt2);
+//        ap_add_flight(stops[i], flt2);
     }
     struct flight **fpp= malloc(10 * sizeof*fpp);
     size_t i = sizeof(int);
@@ -32,8 +33,6 @@ int main()
     ap_flights(stops[1], fpp, n);
     ap_flights(stops[2], fpp, n);
     ap_flights(stops[3], fpp, n);
-    struct flight *fp_t = fpp[1];
-
     return 0;
 }
 
