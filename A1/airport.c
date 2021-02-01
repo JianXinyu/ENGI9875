@@ -53,34 +53,22 @@ int	ap_add_flight(struct airport *ap, struct flight* flt)
 
 void ap_flights(struct airport *ap, struct flight **fpp, size_t *n)
 {
+    printf("ap_flights start \n");
+     fflush(stdout); // hold the buffer
 //    printf("n = %zu ", *n);
-//    printf("fpp length: %zu\n", sizeof fpp);
-    *n = 1;
-//    fpp[0] = NULL;
-//    printf("ap_flights start \n");
 //    printf("airport: %s;", ap->ap_code);
 //    char * test = flight_code(ap->flights[0]);
 //    printf("airport flight: %s\n", test);
 
-    struct airport **stops = malloc(5 * sizeof(struct airport *));
-    stops[0] = ap_create("CYVR");
-    stops[1] = ap_create("CYYC");
-    stops[2] = ap_create("CYYZ");
-    stops[3] = ap_create("CYUL");
-    stops[4] = NULL;
-    struct flight* flt = malloc(sizeof(struct flight *));
-    memcpy(flt, flight_create("PL", 001, stops), sizeof (struct flight));
-//    *flt = *flight_create("PL", 001, stops);
-    fpp[0] = flt;
+    if (*n < ap->flt_count )
+    {
+        *n = ap->flt_count;
+        return;
+    }
 
-//    fpp = malloc(10*sizeof(struct flight *));
-//    if (*n < ap->flt_count ) *n = ap->flt_count;
-//    for(int i = 0; i < n; i++)
-//        fpp = ap->flights;
-//
-//    struct flight *fp_t = fpp[0];
-//    char * test = flight_code(fp_t);
-//    printf("%s\n", test);
+    for(int i = 0; i < ap->flt_count; i++)
+        fpp[i] = ap->flights[i];
+
     printf("ap_flights over \n");
 }
 
