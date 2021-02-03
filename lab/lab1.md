@@ -10,13 +10,13 @@
 
    The only difference is the memory address. 	
 
-   ![image-20210131110759283](A:\MUN\Course\2021Winter\ENGI9875-Embedded-and-Real-Time-Operating-System-Design\ENGI9875\lab\figures\image-20210131110759283.png)
+   ![image-20210131110759283](.\figures\image-20210131110759283.png)
 
 2. Trace the system calls executed by the command `cat /etc/fstab`. Explain the differences between this trace and those of the `echo "hello"` invocations above.
 
    The memory address is different. Most of systems call are the same, except at the ending, `cat` has system calls such as `openat()`, `read()` to open file and read the content of file, while `echo` only write the content that user typed. 
 
-![image-20210131213828774](C:\Users\jianx\AppData\Roaming\Typora\typora-user-images\image-20210131213828774.png)
+![image-20210131213828774](.\figures\image-20210131213828774.png)
 
 ### System call assembly code
 
@@ -51,7 +51,7 @@
 
     Use `objdump(1)` to disassemble the object file. Explain any differences you observe between the disassembly and the original `.S` file.
 
-<img src="A:\MUN\Course\2021Winter\ENGI9875-Embedded-and-Real-Time-Operating-System-Design\ENGI9875\lab\figures\image-20210201111932443.png" alt="image-20210201111932443" style="zoom:67%;" />
+<img src=".\figures\image-20210201111932443.png" alt="image-20210201111932443" style="zoom:67%;" />
 
 In the disassembled object file, there is no `.ascii` or `.global` section. 
 
