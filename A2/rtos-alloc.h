@@ -80,6 +80,7 @@ bool	rtos_allocated(void *ptr);
  */
 size_t	rtos_total_allocated(void);
 
+bool rtos_is_valid(void *p);
 
 /*
  * This macro expands to `}` to close the `extern "C"` block when compiling C++
