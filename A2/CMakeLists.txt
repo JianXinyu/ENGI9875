@@ -8,7 +8,7 @@ set(SOURCES
         test.cpp
         rtos-alloc.c
 #        passthrough.c
-        passthrough-internal.c
+#        passthrough-internal.c
         )
 
 add_executable(${PROJECT_NAME}  ${SOURCES})

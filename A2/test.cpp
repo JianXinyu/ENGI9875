@@ -1,6 +1,9 @@
 #include "rtos-alloc.h"
 
 #include <libgrading.h>
+#include<stdio.h> /*forprintf */
+#include<stdint.h> /*foruint64*/
+#include<time.h> /*forclock_gettime */
 
 using namespace grading;
 
@@ -116,5 +119,13 @@ int main(int argc, char *argv[])
 	const TestSuite::Statistics stats = tests.Run(argc, argv);
 	std::cout << "Score: " << (2 + 5 * stats.score) << "/7" << std::endl;
 
+    uint64_t execTime;/*timeinnanoseconds*/
+    struct timespec tick, tock;
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tick);
+    /*do stuff*/
+    rtos_malloc(1000);
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tock);
+    execTime=1000000000*(tock.tv_sec - tick.tv_sec)+tock.tv_nsec - tick.tv_nsec;
+    printf("elapsed process CPU time = %llu nanoseconds\n",(long long unsigned int)execTime);
 	return 0;
 }
