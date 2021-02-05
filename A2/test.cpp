@@ -1,9 +1,12 @@
 #include "rtos-alloc.h"
 
 #include <libgrading.h>
+
 #include<stdio.h> /*forprintf */
 #include<stdint.h> /*foruint64*/
 #include<time.h> /*forclock_gettime */
+
+#include <fstream> // store the data into a file
 
 using namespace grading;
 
@@ -114,18 +117,53 @@ const TestSuite tests = {
 	},
 };
 
-int main(int argc, char *argv[])
+/**
+ * timer for rtos_malloc() and malloc()
+ * @param   fct(size_t)   rtos_malloc() or malloc()
+ * @param   size    size
+ * @return  running time [nanosecond]
+ */
+size_t Timer(void*	fct(size_t),size_t size)
 {
-	const TestSuite::Statistics stats = tests.Run(argc, argv);
-	std::cout << "Score: " << (2 + 5 * stats.score) << "/7" << std::endl;
-
-    uint64_t execTime;/*timeinnanoseconds*/
+    size_t execTime;/*timeinnanoseconds*/
     struct timespec tick, tock;
     clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tick);
     /*do stuff*/
-    rtos_malloc(1000);
+    fct(size);
+
     clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tock);
     execTime=1000000000*(tock.tv_sec - tick.tv_sec)+tock.tv_nsec - tick.tv_nsec;
-    printf("elapsed process CPU time = %llu nanoseconds\n",(long long unsigned int)execTime);
+    printf("%llu \n",(long long unsigned int)execTime);
+    return execTime;
+}
+
+int main(int argc, char *argv[])
+{
+//	const TestSuite::Statistics stats = tests.Run(argc, argv);
+//	std::cout << "Score: " << (2 + 5 * stats.score) << "/7" << std::endl;
+
+
+    //Open file in write mode
+    std::ofstream outfile;
+    outfile.open("time.txt");
+    //Write the header
+    outfile << "Size malloc() rtos_malloc()\n";
+
+    for(size_t size = 10e5; size < 10e10; size+=10e5)
+    {
+//        std::cout << "SIZE: " << size << "  Time: " << Timer(malloc, size) << '\n';
+        size_t execTime;/*timeinnanoseconds*/
+        struct timespec tick, tock;
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tick);
+        /*do stuff*/
+        malloc(size);
+
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tock);
+        execTime=1000000000*(tock.tv_sec - tick.tv_sec)+tock.tv_nsec - tick.tv_nsec;
+        printf("%llu \n",(long long unsigned int)execTime);
+//        outfile << size << ' ' << Timer(malloc, size) << ' ' << Timer(rtos_malloc, size) << '\n';
+    }
+
+    outfile.close();
 	return 0;
 }
