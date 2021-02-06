@@ -1,36 +1,25 @@
 #include "rtos-alloc.h"
 
 #include <unistd.h>
-#include <pthread.h>
 #include <string.h>
 #include <assert.h>
 
-typedef char ALIGN[16];
+//! reference:
+//1. the C programming language 2ed edition, section 8.7
+//2. https://arjunsreedharan.org/post/148675821737/write-a-simple-memory-allocator
 
-union header{
+typedef char ALIGN[16]; // for alignment
+union header{           // block header
     struct {
-        size_t size;
+        size_t size;    // block size
         unsigned is_free;
-        union header *next;
+        union header *next; // next block if on free list
     } s;
-    ALIGN stub; // align the end of the header memory address
+    ALIGN stub; // force alignment of blocks
 };
 typedef union header header_t;
 
-header_t *head = NULL, *tail = NULL; // keep track of the list
-pthread_mutex_t global_malloc_lock; // prevent several threads from concurrently accessing memory
-
-header_t *get_free_block(size_t size)
-{
-    header_t *curr = head;
-    while(curr) {
-        /* see if there's a free block that can accommodate requested size */
-        if (curr->s.is_free && curr->s.size >= size)
-            return curr;
-        curr = curr->s.next;
-    }
-    return NULL;
-}
+header_t *head = NULL, *tail = NULL; // first and last block to keep track of the list
 
 void* rtos_malloc(size_t size)
 {
@@ -38,119 +27,101 @@ void* rtos_malloc(size_t size)
     header_t *header;
     void *block;
 
+    // if size = 0, no need to allocate memory
     if(!size)
         return NULL;
 
-    pthread_mutex_lock(&global_malloc_lock);
-    header = get_free_block(size);
+    // check the allocated blocks to see if there's a free block that
+    // can accommodate requested size by traversing (first-fit)
+    header = head;
+    while(header)
+    {
+        if(header->s.is_free && header->s.size >= size)
+            break;
+        header = header->s.next;
+    }
 
+    // if there is such a free block
+    // mark it as unfree, and return the actual memory address
     if (header) {
         header->s.is_free = 0;
-        pthread_mutex_unlock(&global_malloc_lock);
         return (void*)(header + 1);
     }
 
+    // if there is no such a free block, allocate new block
+    // new block size = header size + actual block size
     total_size = sizeof(header_t) + size;
     block = sbrk(total_size);
 
+    // if allocation fail, return NULL
     if (block == (void*) -1) {
-        pthread_mutex_unlock(&global_malloc_lock);
         return NULL;
     }
+    // if allocation success, let header = new allocated block
     header = block;
     header->s.size = size;
     header->s.is_free = 0;
     header->s.next = NULL;
 
+    // if there is no head yet, make header as head
     if(!head)
         head = header;
+    // if there is already a tail, make header as new tail
     if(tail)
         tail->s.next = header;
     tail = header;
 
-    pthread_mutex_unlock(&global_malloc_lock);
-
+    // return the actual memory address
     return (void*)(header + 1);
 }
 
 
-void* rtos_realloc(void *block, size_t size)
-{
-    header_t *header;
-    void *ret;
-    if (!block || !size)
-        return rtos_malloc(size);
-    header = (header_t*)block - 1;
-    if (header->s.size >= size)
-        return block;
-    ret = rtos_malloc(size);
-    if (ret) {
-        /* Relocate contents to the new bigger block */
-        memcpy(ret, block, header->s.size);
-        /* Free the old memory block */
-        rtos_free(block);
-    }
-    return ret;
-}
-
 void rtos_free(void *block)
 {
-    header_t *header, *tmp;
-    /* program break is the end of the process's data segment */
-    void *programbreak;
-
+    // if block is NULL
     if (!block)
         return;
-    pthread_mutex_lock(&global_malloc_lock);
-    header = (header_t*)block - 1;
-    /* sbrk(0) gives the current program break address */
-    programbreak = sbrk(0);
 
-    /*
-       Check if the block to be freed is the last one in the
-       linked list. If it is, then we could shrink the size of the
-       heap and release memory to OS. Else, we will keep the block
-       but mark it as free.
-     */
-    if ((char*)block + header->s.size == programbreak) {
+    header_t *header, *tmp;
+    void *brk; // end of the heap memory address
+
+    header = (header_t*)block - 1; // point to block header
+    brk = sbrk(0); // get current brk
+
+    // if the block to be freed is the last one in the block list
+    if ((char*)block + header->s.size == brk) {
+        // shrink heap size
+        // if there is only one block, simply delete it
         if (head == tail) {
             head = tail = NULL;
-        } else {
+        }
+        // else, move tail forward one block
+        else {
             tmp = head;
+            // iterate all blocks to find the block before the tail, make it tail
             while (tmp) {
                 if(tmp->s.next == tail) {
-                    tmp->s.next = NULL;
                     tail = tmp;
+                    tail->s.next = NULL;
                 }
                 tmp = tmp->s.next;
             }
         }
-        /*
-           sbrk() with a negative argument decrements the program break.
-           So memory is released by the program to OS.
-        */
+
+        // release the memory to OS
         sbrk(0 - header->s.size - sizeof(header_t));
-        /* Note: This lock does not really assure thread
-           safety, because sbrk() itself is not really
-           thread safe. Suppose there occurs a foregin sbrk(N)
-           after we find the program break and before we decrement
-           it, then we end up realeasing the memory obtained by
-           the foreign sbrk().
-        */
-        pthread_mutex_unlock(&global_malloc_lock);
         return;
     }
+
+    // if not, simply mark it as free
     header->s.is_free = 1;
-    pthread_mutex_unlock(&global_malloc_lock);
+
 }
 
 header_t* alloc_find(void *p)
 {
-    for (header_t *hp = head; hp != NULL; hp = hp->s.next)
-    {
-//        assert(hp != NULL);
-        if (hp == (header_t*) p - 1)
-        {
+    for (header_t *hp = head; hp != NULL; hp = hp->s.next){
+        if (hp == (header_t*) p - 1){
             return hp;
         }
     }
@@ -175,8 +146,7 @@ size_t rtos_total_allocated()
 {
     size_t total = 0;
 
-    for (header_t *hp = head; hp != NULL; hp = hp->s.next)
-    {
+    for (header_t *hp = head; hp != NULL; hp = hp->s.next){
         total += hp->s.size;
     }
 

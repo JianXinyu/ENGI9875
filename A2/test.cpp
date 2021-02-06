@@ -149,21 +149,32 @@ int main(int argc, char *argv[])
     //Write the header
     outfile << "Size malloc() rtos_malloc()\n";
 
-    for(size_t size = 10e5; size < 10e10; size+=10e5)
+    for(size_t size = 10e5; size < 10e6; size+=10e4)
     {
-//        std::cout << "SIZE: " << size << "  Time: " << Timer(malloc, size) << '\n';
-        size_t execTime;/*timeinnanoseconds*/
-        struct timespec tick, tock;
-        clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tick);
-        /*do stuff*/
-        malloc(size);
-
-        clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&tock);
-        execTime=1000000000*(tock.tv_sec - tick.tv_sec)+tock.tv_nsec - tick.tv_nsec;
-        printf("%llu \n",(long long unsigned int)execTime);
-//        outfile << size << ' ' << Timer(malloc, size) << ' ' << Timer(rtos_malloc, size) << '\n';
+        outfile << size << ' ' << Timer(malloc, size) << ' ' << Timer(rtos_malloc, size) << '\n';
     }
 
     outfile.close();
+
 	return 0;
 }
+
+
+//void* rtos_realloc(void *block, size_t size)
+//{
+//    header_t *header;
+//    void *ret;
+//    if (!block || !size)
+//        return rtos_malloc(size);
+//    header = (header_t*)block - 1;
+//    if (header->s.size >= size)
+//        return block;
+//    ret = rtos_malloc(size);
+//    if (ret) {
+//        /* Relocate contents to the new bigger block */
+//        memcpy(ret, block, header->s.size);
+//        /* Free the old memory block */
+//        rtos_free(block);
+//    }
+//    return ret;
+//}
