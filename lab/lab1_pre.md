@@ -40,7 +40,7 @@
 
       4 instances
 
-      ![image-20210130150913755](A:\MUN\Course\2021Winter\ENGI9875-Embedded-and-Real-Time-Operating-System-Design\ENGI9875\lab\figures\image-20210130150913755.png)
+      ![image-20210130150913755](.\figures\image-20210130150913755.png)
 
    2. Which file is most appropriate for your use in this lab? Why? (you may find the `uname(1)` program to be helpful – how?)
 
@@ -48,7 +48,7 @@
 
       `uname` can print system information. So I can use it to get the architecture type.
 
-      ![image-20210130154103910](A:\MUN\Course\2021Winter\ENGI9875-Embedded-and-Real-Time-Operating-System-Design\ENGI9875\lab\figures\image-20210130154103910.png)
+      ![image-20210130154103910](.\figures\image-20210130154103910.png)
 
       
 

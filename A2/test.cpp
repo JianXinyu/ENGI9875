@@ -149,7 +149,7 @@ int main(int argc, char *argv[])
     //Write the header
     outfile << "Size malloc() rtos_malloc()\n";
 
-    for(size_t size = 10e5; size < 10e6; size+=10e4)
+    for(size_t size = 10e5; size < 10e8; size+=10e5)
     {
         outfile << size << ' ' << Timer(malloc, size) << ' ' << Timer(rtos_malloc, size) << '\n';
     }
