@@ -61,13 +61,27 @@ In the `do_stuff` section, the `mov` 's name isn't `$message`, instead it's a ad
 
 2. Download [main.c](https://memorialu.gitlab.io/Engineering/ECE/Teaching/operating-systems/website/lab/1/main.c) and [Makefile](https://memorialu.gitlab.io/Engineering/ECE/Teaching/operating-systems/website/lab/1/Makefile) and use them to compile a complete program. Use `objdump(1)` to disassemble the complete program (hint: what does the command `grep -A` do?). Identify any differences between the `do_stuff` function in this output from that of the `stuff.o` disassembly. Use `nm(1)` to explain these differences.
 
-`grep -A NUM` prints  NUM  lines  of  trailing  context after matching lines.  Places a line containing a group separator (--) between contiguous groups of matches.  
+First of all, put stuff.c, main.c, Makefile into one folder and `make`. 
+
+`grep -A NUM` prints  NUM  lines  of  trailing  context after matching lines.  Places a line containing a group separator (--) between contiguous groups of matches.  As the following result shows, there are only three lines in the `stuff.o` disassembly, while there are much more in the `syscalls` disassembly. Apparently, `do_stuff` appears twice in the `syscalls` disassembly, one is the definition, another is the calling. Using `nm`, we can tell that syscalls symbols include stuff.o symbols, but have many more symbols.
 
 ```bash
+$ make
+clang -Weverything -g   -c -o main.o main.c
+main.c:25:14: warning: unused parameter 'argc' [-Wunused-parameter]
+int main(int argc, char *argv[])
+             ^
+main.c:25:26: warning: unused parameter 'argv' [-Wunused-parameter]
+int main(int argc, char *argv[])
+                         ^
+2 warnings generated.
+as   -o stuff.o stuff.s
+clang main.o stuff.o -o syscalls
+
 $ objdump -D stuff.o > stuff.txt
 $ objdump -D syscalls > syscalls.txt
 
-$ grep -A 10 -E 'do_stuff' *.txt
+$ grep -A 6 -E 'do_stuff' *.txt
 stuff.txt:0000000000000000 <do_stuff>:
 stuff.txt-   0:	b8 00 00 00 00       	mov    $0x0,%eax
 stuff.txt-   5:	cd 80                	int    $0x80
@@ -91,5 +105,65 @@ syscalls.txt-  400631:	c3                   	retq
 syscalls.txt-  400632:	66 2e 0f 1f 84 00 00 	nopw   %cs:0x0(%rax,%rax,1)
 syscalls.txt-  400639:	00 00 00 
 syscalls.txt-  40063c:	0f 1f 40 00          	nopl   0x0(%rax)
+
+$ nm stuff.o
+0000000000000000 T do_stuff
+0000000000000000 d message
+
+$ nm syscalls
+000000000060104e B __bss_start
+                 U clock_gettime@@GLIBC_2.17
+000000000060104e b completed.7698
+0000000000601030 D __data_start
+0000000000601030 W data_start
+00000000004004d0 t deregister_tm_clones
+00000000004004c0 T _dl_relocate_static_pie
+0000000000400540 t __do_global_dtors_aux
+0000000000600e18 t __do_global_dtors_aux_fini_array_entry
+000000000040062a T do_stuff
+0000000000601038 D __dso_handle
+0000000000600e20 d _DYNAMIC
+000000000060104e D _edata
+0000000000601050 B _end
+                 U err@@GLIBC_2.2.5
+00000000004006b4 T _fini
+0000000000400570 t frame_dummy
+0000000000600e10 t __frame_dummy_init_array_entry
+000000000040085c r __FRAME_END__
+0000000000601000 d _GLOBAL_OFFSET_TABLE_
+                 w __gmon_start__
+0000000000400720 r __GNU_EH_FRAME_HDR
+0000000000400438 T _init
+0000000000600e18 t __init_array_end
+0000000000600e10 t __init_array_start
+00000000004006c0 R _IO_stdin_used
+00000000004006b0 T __libc_csu_fini
+0000000000400640 T __libc_csu_init
+                 U __libc_start_main@@GLIBC_2.2.5
+0000000000400580 T main
+0000000000601040 d message
+                 U printf@@GLIBC_2.2.5
+0000000000400500 t register_tm_clones
+0000000000400490 T _start
+0000000000601050 D __TMC_END__
 ```
 
+
+
+3. Trace the system calls executed by the complete program. Explain any differences from the echo "hello" traces.
+
+```bash
+$ strace -o hello.txt echo "hello"
+$ strace -o syscalls.txt ./syscalls 
+$ meld hello.txt syscalls.txt 
+```
+
+![image-20210207230720585](.\figures\image-20210207230720585.png)
+
+The first half parts of these two files respectively are near the same, except for the address. 
+
+However, the second half parts are different to large degree. `syscalls` has a new system call clock_gettime and calls itself, while `hello` has openat, mmap exclusively. And the sequence of system calls is different. 
+
+
+
+4. With the complete program’s disassembly open in another window, run the program under lldb(1), breaking execution at the do_stuff function. Single-step to the int $0x80 instruction and print the contents of all registers using the register read command. Interpret these registers, providing the value of the system call number that is being executed and its arguments. Show how the system call number matches what you observed in the system call trace (the arguments are unlikely to match: you will find that they change every time you run the program depending on addresses left in registers at the time of the do_stuff call).
