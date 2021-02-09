@@ -167,3 +167,114 @@ However, the second half parts are different to large degree. `syscalls` has a n
 
 
 4. With the complete program’s disassembly open in another window, run the program under lldb(1), breaking execution at the do_stuff function. Single-step to the int $0x80 instruction and print the contents of all registers using the register read command. Interpret these registers, providing the value of the system call number that is being executed and its arguments. Show how the system call number matches what you observed in the system call trace (the arguments are unlikely to match: you will find that they change every time you run the program depending on addresses left in registers at the time of the do_stuff call).
+
+```shell
+$ lldb ./syscalls
+(lldb) target create "./syscalls"
+Current executable set to './syscalls' (x86_64).
+(lldb) b do_stuff 
+Breakpoint 1: where = syscalls`do_stuff, address = 0x000000000040062a
+(lldb) r
+Process 5949 launched: './syscalls' (x86_64)
+Calling do_stuff()!
+Process 5949 stopped
+* thread #1, name = 'syscalls', stop reason = breakpoint 1.1
+    frame #0: 0x000000000040062a syscalls`do_stuff
+syscalls`do_stuff:
+->  0x40062a <+0>: movl   $0x601040, %eax           ; imm = 0x601040 
+    0x40062f <+5>: int    $0x80
+    0x400631 <+7>: retq   
+    0x400632 <+8>: nopw   %cs:(%rax,%rax)
+(lldb) si
+Process 5949 stopped
+* thread #1, name = 'syscalls', stop reason = instruction step into
+    frame #0: 0x000000000040062f syscalls`do_stuff + 5
+syscalls`do_stuff:
+->  0x40062f <+5>:  int    $0x80
+    0x400631 <+7>:  retq   
+    0x400632 <+8>:  nopw   %cs:(%rax,%rax)
+    0x40063c <+18>: nopl   (%rax)
+(lldb) register read
+General Purpose Registers:
+       rax = 0x0000000000601040  message
+       rbx = 0x0000000000000000
+       rcx = 0x00007ffff7ffb99a  [vdso]`clock_gettime + 74
+       rdx = 0x0000000000000000
+       rdi = 0x0000000000000002
+       rsi = 0x00007fffffffdf00
+       rbp = 0x00007fffffffdf20
+       rsp = 0x00007fffffffded8
+        r8 = 0x0000000000000000
+        r9 = 0x0000000000000000
+       r10 = 0x0000000000000003
+       r11 = 0x0000000000000246
+       r12 = 0x0000000000400490  syscalls`_start
+       r13 = 0x00007fffffffe000
+       r14 = 0x0000000000000000
+       r15 = 0x0000000000000000
+       rip = 0x000000000040062f  syscalls`do_stuff + 5
+    rflags = 0x0000000000000246
+        cs = 0x0000000000000033
+        fs = 0x0000000000000000
+        gs = 0x0000000000000000
+        ss = 0x000000000000002b
+        ds = 0x0000000000000000
+        es = 0x0000000000000000
+```
+
+Refer to the system call number and arguments table, 
+
+- register `%rax` stores the system call number  0x601040, 
+- `%rdi` stores the Argument1 0x02, 
+- `%rsi` stores the Argument2 0x00007fffffffdf00, 
+- `%rdx` stores the Argument3 0
+- `%r10` stores the Argument4 0x03
+- `%r8` stores the Argument5 0
+- `%r9` stores the Argument6 0
+
+In the system call trace, the corresponding line is:
+
+```tex
+syscall_0x601040(0x2, 0x7fff47780200, 0, 0x3, 0, 0) = -1 (errno 38)
+```
+
+the system call number is used in the function name, all arguments equals except for Argument2.
+
+
+
+### Invoking system calls
+
+1. Modify stuff.s to cause `do_stuff` to print your names to stdout. Provide your source code and explain the modifications you made.
+
+   ```assembly
+           .data
+   message:
+           .ascii "Xinyu Jian\n"
+   
+           .text
+   
+           .global do_stuff
+   
+   do_stuff:
+           mov     $message, %eax
+           int     $0x80
+   
+           ret
+   
+   ```
+
+   
+
+2. Modify your program to use the `syscall` instruction instead of `int $0x80`. Explain your modifications.
+
+   
+
+   
+
+3. Modify main.c to print out the total time that elapses in the `do_stuff` call. Use the `ministat(1)` program to describe the distribution of the execution times for the version of `do_stuff` that uses `syscall` and the variant that uses `int $0x80`. `syscall` is the newer instruction — what can you infer about the motivation for its introduction?
+
+   
+
+   
+
+4. Modify your program to open a file (e.g., `/etc/fstab`), read up to 4096 B of its contents into a buffer, print them to stdout and close the file descriptor. Explain your work and demonstrate that it works.
