@@ -349,3 +349,37 @@ the system call number is used in the function name, all arguments equals except
    
 
 4. Modify your program to open a file (e.g., `/etc/fstab`), read up to 4096 B of its contents into a buffer, print them to stdout and close the file descriptor. Explain your work and demonstrate that how it works.
+
+   ```c
+   #include <sys/stat.h>
+   #include <fcntl.h>
+   #include <unistd.h>
+   
+   #define SIZE 4096
+   
+   int main()
+   {
+           int fd = open("hamlet.txt", O_RDONLY);  // open a file, read only, fails if not found
+           if(fd == -1){                           // check for errors on open
+                   perror("Failed to open file\n");
+           }
+   
+           char buffer[SIZE];
+           int bytes_read = read(fd, buffer, SIZE);// read up to 4096 B of file's contents into a buffer
+           write(STDOUT_FILENO, buffer, bytes_read);// write to the screen
+           int result = close(fd);                 // close the file associated with fd
+           if(result == -1){                       // check for eerors on close
+                   perror("Failed to close the file\n");
+           }
+   }
+   
+   ```
+
+   1. open a file and read only, return a file descriptor. 
+
+   2. check if open successfully.
+   3. create a char array buffer with specified size.
+   4. read up to 4096 bytes from a file descriptor into the buffer.
+   5. close the file descriptor.
+   6. check if close successfully.
+
