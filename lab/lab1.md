@@ -246,6 +246,10 @@ the system call number is used in the function name, all arguments equals except
 
 1. Modify stuff.s to cause `do_stuff` to print your names to stdout. Provide your source code and explain the modifications you made.
 
+   since we make a system call by calling interrupt `$0x80` using the `int` instruction, according to [Wiki](https://en.wikibooks.org/wiki/X86_Assembly/Interfacing_with_Linux#syscall), we should use the system call numbers from `unistd_32.h` and registers as follows:
+
+   ![1](/home/xy/Pictures/Screenshot from 2021-02-09 22-48-28.png)
+
    ```assembly
            .data
    message:
@@ -256,25 +260,92 @@ the system call number is used in the function name, all arguments equals except
            .global do_stuff
    
    do_stuff:
-           mov     $message, %eax
-           int     $0x80
-   
+           mov     $4, %eax        # sys_write system call
+           mov     $1, %ebx        # stdout file descriptor
+           mov     $message, %ecx  # bytes to write
+           mov     $11, %edx       # number of bytes to write
+           int     $0x80           # perform system call
            ret
-   
    ```
 
    
 
 2. Modify your program to use the `syscall` instruction instead of `int $0x80`. Explain your modifications.
 
+   Since `syscall` is in x86_64 architecture, so we use the system call numbers from `unistd_64.h` and registers as follows:
+
+   ![2](/home/xy/Pictures/Screenshot from 2021-02-09 22-56-29.png)
+
+   ```bash
+           .data
+   message:
+           .ascii "Xinyu Jian\n"
    
+           .text
+   
+           .global do_stuff
+   
+   do_stuff:
+           mov     $1, %rax        # write system call
+           mov     $1, %rdi        # stdout file descriptor
+           mov     $message, %rsi  # bytes to write
+           mov     $11, %rdx       # number of bytes to write
+           syscall                 # perform system call
+           ret
+   
+   ```
+
+   for future use, we make a new file named `stuff_64.s` and change `Makefile` if we want to compile it. 
 
    
 
 3. Modify main.c to print out the total time that elapses in the `do_stuff` call. Use the `ministat(1)` program to describe the distribution of the execution times for the version of `do_stuff` that uses `syscall` and the variant that uses `int $0x80`. `syscall` is the newer instruction — what can you infer about the motivation for its introduction?
 
+   ```C
+   int main(int argc, char *argv[])
+   {
+           struct timespec begin, end;
+           FILE *fptr;
+           long long int time;
+           fptr = fopen("time_syscall.txt","w");
+           if(fptr == NULL)
+           {
+                   printf("ERROR!");
+                   exit(1);
+           }
+           printf("Calling do_stuff()!\n");
+           for(int i = 0; i < 1000; i++)
+           {
    
+                   clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&begin);
+                   do_stuff();
+                   clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&end);
+                   time =  end.tv_nsec - begin.tv_nsec;
+                   fprintf(fptr, "%lli\n", time);
+           }
+           printf("Back in main() again.\n");
+           fclose(fptr);
+           return 0;
+   }
+   ```
+
+   the above code will run `do_stuff()` 1000 times and store the running time into a file named `time_syscall.txt`, which means we used `syscall` in `do_stuff()`. When we want to count the time for `int $0x80`, we should change the file name into `time_int.txt`.
+
+   After running `./syscalls` for both versions, we have two .txt files. Then use `ministat` to inspect.
+
+   ```bash
+   $ ministat -A -s -w 60 time_syscall.txt time_int.txt 
+   x time_syscall.txt
+   + time_int.txt
+       N           Min           Max        Median           Avg        Stddev
+   x 1000          1801       9928209          2016     14649.472     324341.11
+   + 1000          2020      12912814          2410     16549.645     408601.52
+   No difference proven at 95.0% confidence
+   
+   ```
+
+   `syscall` is approximately 20 ns faster than `int $0x80`. Thus, one of motivations to use `syscall` is to improve the performance and reduce the time. Given that `syscall` is a very often used instruction, a small time saving may cause some overall performance improvement. 
 
    
 
-4. Modify your program to open a file (e.g., `/etc/fstab`), read up to 4096 B of its contents into a buffer, print them to stdout and close the file descriptor. Explain your work and demonstrate that it works.
+4. Modify your program to open a file (e.g., `/etc/fstab`), read up to 4096 B of its contents into a buffer, print them to stdout and close the file descriptor. Explain your work and demonstrate that how it works.

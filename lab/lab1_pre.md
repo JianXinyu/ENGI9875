@@ -54,17 +54,21 @@
 
    3. What are the system call numbers for `open(2)`, `read(2)`, `write(2)` and `close(2)` on the x86-64 architecture?
 
-      `open(2)`  0
+      `open(2)`  2
 
-      `read(2) ` 1
+      `read(2) ` 0
 
-      `write(2)` 2
+      `write(2)` 1
 
       `close(2)` 3
 
       
 
 4. Consulting Linux’s inline documentation for the [`syscall`](https://github.com/torvalds/linux/blob/master/arch/x86/entry/entry_64.S#L107), [`sysenter`](https://github.com/torvalds/linux/blob/master/arch/x86/entry/entry_32.S#L882) and [legacy system call entry](https://github.com/torvalds/linux/blob/master/arch/x86/entry/entry_32.S#L1044) instructions, record which registers are used to hold the system call number and arguments for each system call mechanism:
+
+   `syscall` is the default way of entering kernel mode on `x86-64`. This instruction is not available in 32 bit modes of operation *on Intel processors*.
+
+   `sysenter` is an instruction most frequently used to invoke system calls in 32 bit modes of operation. It is similar to `syscall`.
 
 |                    | `SYSCALL` | `SYSENTER` | LEGACY |
 | :----------------: | :-------: | :--------: | :----: |
