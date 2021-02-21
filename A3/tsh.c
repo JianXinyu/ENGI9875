@@ -82,6 +82,7 @@ void listjobs(struct job_t *jobs);
 void usage(void);
 void unix_error(char *msg);
 void app_error(char *msg);
+pid_t Fork(void);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
@@ -165,6 +166,37 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    char *argv[MAXARGS];    /* Argument list execve() */
+    char buf[MAXLINE];      /* Holds modified command line*/
+    int bg;                 /* Should the job run in bg or fg? */
+    pid_t pid;
+
+    strcpy(buf, cmdline);
+    bg = parseline(buf, argv);
+    if(argv[0] == NULL)     /* Ignore empty lines */
+        return;
+
+    if(!builtin_cmd(argv)){     // executable file
+        if((pid = Fork()) == 0){// child runs user job
+            if(execve(argv[0], argv, environ) < 0){
+                printf("%s: Command not found. \n", argv[0]);
+                exit(0);
+            }
+        }
+
+
+        if(!bg){            /* the job runs in fg */
+            int status;
+            /* Parent waits for fg job to terminate */
+            if(waitpid(pid, &status, 0) < 0){
+                unix_error("waitpid error");
+            }
+        }
+        else{               /* the job runs in bg */
+            printf("%d: %s", pid, cmdline);
+        }
+    }
+
     return;
 }
 
@@ -231,6 +263,7 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+
     return 0;     /* not a builtin command */
 }
 
@@ -477,6 +510,19 @@ void app_error(char *msg)
 {
     fprintf(stdout, "%s\n", msg);
     exit(1);
+}
+
+/** error-handling wrapper of fork()
+ *      to simplify the code
+ * @return pid
+ */
+pid_t Fork(void)
+{
+    pid_t pid;
+    pid = fork();
+    if(pid < 0)
+        unix_error("Fork error");
+    return pid;
 }
 
 /*
