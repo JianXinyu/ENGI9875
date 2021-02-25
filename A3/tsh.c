@@ -12,6 +12,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+//#include <readline/history.h> // history
+#include "sio.h"
 
 /* Misc manifest constants */
 #define MAXLINE    1024   /* max line size */
@@ -82,9 +84,16 @@ void listjobs(struct job_t *jobs);
 void usage(void);
 void unix_error(char *msg);
 void app_error(char *msg);
-pid_t Fork(void);
 typedef void handler_t(int);
+
 handler_t *Signal(int signum, handler_t *handler);
+/*********************************************
+ * Wrappers for Unix process control functions
+ ********************************************/
+pid_t Fork(void);
+void Kill(pid_t pid, int signum);
+pid_t Waitpid(pid_t pid, int *iptr, int options);
+
 
 /*
  * main - The shell's main routine 
@@ -184,10 +193,10 @@ void eval(char *cmdline)
             }
         }
 
-
         if(!bg){            /* the job runs in fg */
             int status;
             /* Parent waits for fg job to terminate */
+//            Waitpid(pid, &status, 0);
             if(waitpid(pid, &status, 0) < 0){
                 unix_error("waitpid error");
             }
@@ -200,62 +209,6 @@ void eval(char *cmdline)
     return;
 }
 
-/* 
- * parseline - Parse the command line and build the argv array.
- * 
- * Characters enclosed in single quotes are treated as a single
- * argument.  Return true if the user has requested a BG job, false if
- * the user has requested a FG job.  
- */
-int parseline(const char *cmdline, char **argv) 
-{
-    static char array[MAXLINE]; /* holds local copy of command line */
-    char *buf = array;          /* ptr that traverses command line */
-    char *delim;                /* points to first space delimiter */
-    int argc;                   /* number of args */
-    int bg;                     /* background job? */
-
-    strcpy(buf, cmdline);
-    buf[strlen(buf)-1] = ' ';  /* replace trailing '\n' with space */
-    while (*buf && (*buf == ' ')) /* ignore leading spaces */
-	buf++;
-
-    /* Build the argv list */
-    argc = 0;
-    if (*buf == '\'') {
-	buf++;
-	delim = strchr(buf, '\'');
-    }
-    else {
-	delim = strchr(buf, ' ');
-    }
-
-    while (delim) {
-	argv[argc++] = buf;
-	*delim = '\0';
-	buf = delim + 1;
-	while (*buf && (*buf == ' ')) /* ignore spaces */
-	       buf++;
-
-	if (*buf == '\'') {
-	    buf++;
-	    delim = strchr(buf, '\'');
-	}
-	else {
-	    delim = strchr(buf, ' ');
-	}
-    }
-    argv[argc] = NULL;
-    
-    if (argc == 0)  /* ignore blank line */
-	return 1;
-
-    /* should the job run in the background? */
-    if ((bg = (*argv[argc-1] == '&')) != 0) {
-	argv[--argc] = NULL;
-    }
-    return bg;
-}
 
 /* 
  * builtin_cmd - If the user has typed a built-in command then execute
@@ -263,6 +216,8 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    if(!strcmp(argv[0], "quit")) // quit command
+        exit(0);
 
     return 0;     /* not a builtin command */
 }
@@ -296,16 +251,21 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    
     return;
 }
 
 /* 
- * sigint_handler - The kernel sends a SIGINT to the shell whenver the
+ * sigint_handler - The kernel sends a SIGINT to the shell whenever the
  *    user types ctrl-c at the keyboard.  Catch it and send it along
  *    to the foreground job.  
  */
 void sigint_handler(int sig) 
 {
+    pid_t pid = fgpid(jobs);
+    if(pid > 0)
+        Kill(-pid, SIGINT);
+    sio_puts("sigint_handler\n");
     return;
 }
 
@@ -316,12 +276,73 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    pid_t pid =fgpid(jobs);
+    if(pid > 0)
+        Kill(-pid, SIGTSTP);
+    sio_puts("sigtstp_handler\n");
     return;
 }
 
 /*********************
  * End signal handlers
  *********************/
+
+/*
+ * parseline - Parse the command line and build the argv array.
+ *
+ * Characters enclosed in single quotes are treated as a single
+ * argument.  Return true if the user has requested a BG job, false if
+ * the user has requested a FG job.
+ */
+int parseline(const char *cmdline, char **argv)
+{
+    static char array[MAXLINE]; /* holds local copy of command line */
+    char *buf = array;          /* ptr that traverses command line */
+    char *delim;                /* points to first space delimiter */
+    int argc;                   /* number of args */
+    int bg;                     /* background job? */
+
+    strcpy(buf, cmdline);
+    buf[strlen(buf)-1] = ' ';  /* replace trailing '\n' with space */
+    while (*buf && (*buf == ' ')) /* ignore leading spaces */
+        buf++;
+
+    /* Build the argv list */
+    argc = 0;
+    if (*buf == '\'') {
+        buf++;
+        delim = strchr(buf, '\'');
+    }
+    else {
+        delim = strchr(buf, ' ');
+    }
+
+    while (delim) {
+        argv[argc++] = buf;
+        *delim = '\0';
+        buf = delim + 1;
+        while (*buf && (*buf == ' ')) /* ignore spaces */
+            buf++;
+
+        if (*buf == '\'') {
+            buf++;
+            delim = strchr(buf, '\'');
+        }
+        else {
+            delim = strchr(buf, ' ');
+        }
+    }
+    argv[argc] = NULL;
+
+    if (argc == 0)  /* ignore blank line */
+        return 1;
+
+    /* should the job run in the background? */
+    if ((bg = (*argv[argc-1] == '&')) != 0) {
+        argv[--argc] = NULL;
+    }
+    return bg;
+}
 
 /***********************************************
  * Helper routines that manipulate the job list
@@ -403,8 +424,8 @@ pid_t fgpid(struct job_t *jobs) {
     int i;
 
     for (i = 0; i < MAXJOBS; i++)
-	if (jobs[i].state == FG)
-	    return jobs[i].pid;
+        if (jobs[i].state == FG)
+            return jobs[i].pid;
     return 0;
 }
 
@@ -512,19 +533,6 @@ void app_error(char *msg)
     exit(1);
 }
 
-/** error-handling wrapper of fork()
- *      to simplify the code
- * @return pid
- */
-pid_t Fork(void)
-{
-    pid_t pid;
-    pid = fork();
-    if(pid < 0)
-        unix_error("Fork error");
-    return pid;
-}
-
 /*
  * Signal - wrapper for the sigaction function
  */
@@ -537,7 +545,7 @@ handler_t *Signal(int signum, handler_t *handler)
     action.sa_flags = SA_RESTART; /* restart syscalls if possible */
 
     if (sigaction(signum, &action, &old_action) < 0)
-	unix_error("Signal error");
+        unix_error("Signal error");
     return (old_action.sa_handler);
 }
 
@@ -551,5 +559,32 @@ void sigquit_handler(int sig)
     exit(1);
 }
 
+/** error-handling wrapper of fork()
+ *      to simplify the code
+ * @return pid
+ */
+pid_t Fork(void)
+{
+    pid_t pid;
+    pid = fork();
+    if(pid < 0)
+        unix_error("Fork error");
+    return pid;
+}
 
+void Kill(pid_t pid, int signum)
+{
+    int rc;
 
+    if ((rc = kill(pid, signum)) < 0)
+        unix_error("Kill error");
+}
+
+pid_t Waitpid(pid_t pid, int *iptr, int options)
+{
+    pid_t retpid;
+
+    if ((retpid  = waitpid(pid, iptr, options)) < 0)
+        unix_error("Waitpid error");
+    return(retpid);
+}

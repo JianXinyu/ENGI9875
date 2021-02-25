@@ -6,6 +6,8 @@ project(A3)
 # Create a sources variable with a link to all cpp files to compile
 set(SOURCES
         shell.c
+        sio.c
+        tsh.c
         )
 
 add_executable(${PROJECT_NAME}  ${SOURCES})
