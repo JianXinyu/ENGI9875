@@ -13,7 +13,6 @@
 #include <sys/wait.h>
 #include <errno.h>
 //#include <readline/history.h> // history
-#include "sio.h"
 
 /* Misc manifest constants */
 #define MAXLINE    1024   /* max line size */
@@ -87,6 +86,10 @@ void app_error(char *msg);
 typedef void handler_t(int);
 
 handler_t *Signal(int signum, handler_t *handler);
+void Sigfillset(sigset_t *set);
+void Sigemptyset(sigset_t *set);
+void Sigaddset(sigset_t *set, int signum);
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 /*********************************************
  * Wrappers for Unix process control functions
  ********************************************/
@@ -94,6 +97,12 @@ pid_t Fork(void);
 void Kill(pid_t pid, int signum);
 pid_t Waitpid(pid_t pid, int *iptr, int options);
 
+ssize_t sio_puts(char s[]);
+ssize_t sio_putl(long v);
+void sio_error(char s[]);
+ssize_t Sio_putl(long v);
+ssize_t Sio_puts(char s[]);
+void Sio_error(char s[]);
 
 /*
  * main - The shell's main routine 
@@ -179,30 +188,46 @@ void eval(char *cmdline)
     char buf[MAXLINE];      /* Holds modified command line*/
     int bg;                 /* Should the job run in bg or fg? */
     pid_t pid;
+    sigset_t mask_all, mask_one, prev_one; /* Block bit vector */
 
     strcpy(buf, cmdline);
     bg = parseline(buf, argv);
     if(argv[0] == NULL)     /* Ignore empty lines */
         return;
 
+    Sigfillset(&mask_all);
+    Sigemptyset(&mask_one);
+    Sigaddset(&mask_one, SIGCHLD);
+
+    /* Eliminate "Race" */
+    Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
+
     if(!builtin_cmd(argv)){     // executable file
-        if((pid = Fork()) == 0){// child runs user job
+        if((pid = Fork()) == 0){// child process
+            //TODO why?
+            setpgid(0, 0); /* puts the child in a new process group whose group ID is identical to
+                                        * the child’s PID.
+                                        * This ensures that there will be only one process, your shell, in the
+                                        * foreground process group. When you type ctrl-c, the shell should catch
+                                        * the resulting SIGINT and then forward it to the appropriate foreground job
+                                        * (or more precisely, the process group that contains the foreground job).
+                                        * */
+            Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
             if(execve(argv[0], argv, environ) < 0){
                 printf("%s: Command not found. \n", argv[0]);
                 exit(0);
             }
         }
 
+        Sigprocmask(SIG_BLOCK, &mask_all, NULL); //TODO when to unblock?
+        addjob(jobs, pid, (bg ? BG : FG), cmdline);
+        Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
+
         if(!bg){            /* the job runs in fg */
-            int status;
-            /* Parent waits for fg job to terminate */
-//            Waitpid(pid, &status, 0);
-            if(waitpid(pid, &status, 0) < 0){
-                unix_error("waitpid error");
-            }
+            waitfg(pid);
         }
         else{               /* the job runs in bg */
-            printf("%d: %s", pid, cmdline);
+            printf("[%d] (%d): %s", pid2jid(pid), pid, cmdline);
         }
     }
 
@@ -218,7 +243,16 @@ int builtin_cmd(char **argv)
 {
     if(!strcmp(argv[0], "quit")) // quit command
         exit(0);
-
+    if(!strcmp(argv[0], "&")) // ignore singleton &
+        return 1;
+    if(!strcmp(argv[0], "jobs")){
+        listjobs(jobs);
+        return 1;
+    }
+    if(!strcmp(argv[0], "bg") || !strcmp(argv[0], "fg")){
+        do_bgfg(argv);
+        return 1;
+    }
     return 0;     /* not a builtin command */
 }
 
@@ -227,6 +261,7 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+
     return;
 }
 
@@ -235,6 +270,10 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    //TODO suspend version
+    while(pid == fgpid(jobs)){
+        sleep(1);
+    }
     return;
 }
 
@@ -251,8 +290,32 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
-    
-    return;
+    int olderrno = errno;
+    sigset_t mask_all, prev_all;
+    int status;
+    pid_t pid;
+
+    Sigfillset(&mask_all);
+    while((pid = waitpid(-1, &status, 0)) > 0) /* Reap a zombie child */
+    {
+        // TODO: different status
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+        deletejob(jobs, pid);
+        Sigprocmask(SIG_SETMASK, &prev_all, NULL);
+        if(WIFSIGNALED(status))
+            printf("Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, WTERMSIG(status));
+        if(WIFSTOPPED(status)) {
+            printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, WSTOPSIG(status));
+            struct job_t *job = getjobpid(pid);
+            if (job != NULL)
+                job->state = ST;
+        }
+//        Sio_puts("sigchld_handler\n");
+    }
+
+    if(errno != ECHILD)
+        Sio_error("waitpid error\n");
+    errno = olderrno;
 }
 
 /* 
@@ -265,8 +328,7 @@ void sigint_handler(int sig)
     pid_t pid = fgpid(jobs);
     if(pid > 0)
         Kill(-pid, SIGINT);
-    sio_puts("sigint_handler\n");
-    return;
+    Sio_puts("sigint_handler\n");
 }
 
 /*
@@ -279,8 +341,7 @@ void sigtstp_handler(int sig)
     pid_t pid =fgpid(jobs);
     if(pid > 0)
         Kill(-pid, SIGTSTP);
-    sio_puts("sigtstp_handler\n");
-    return;
+    Sio_puts("sigtstp_handler\n");
 }
 
 /*********************
@@ -559,6 +620,33 @@ void sigquit_handler(int sig)
     exit(1);
 }
 
+void Sigfillset(sigset_t *set)
+{
+    if(sigfillset(set) < 0)
+        unix_error("Sigfillset error\n");
+}
+
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
+{
+    if(sigprocmask(how, set, oldset) < 0)
+        unix_error("Sigprocmask error\n");
+    return;
+}
+
+void Sigemptyset(sigset_t *set)
+{
+    if(sigemptyset(set) < 0)
+        unix_error("Sigemptyset error\n");
+    return;
+}
+
+void Sigaddset(sigset_t *set, int signum)
+{
+    if(sigaddset(set, signum) < 0)
+        unix_error("Sigaddset error\n");
+    return;
+}
+
 /** error-handling wrapper of fork()
  *      to simplify the code
  * @return pid
@@ -587,4 +675,105 @@ pid_t Waitpid(pid_t pid, int *iptr, int options)
     if ((retpid  = waitpid(pid, iptr, options)) < 0)
         unix_error("Waitpid error");
     return(retpid);
+}
+
+
+/*************************************************************
+ * The Sio (Signal-safe I/O) package - simple reentrant output
+ * functions that are safe for signal handlers.
+ *************************************************************/
+
+/* Private sio functions */
+
+/* $begin sioprivate */
+/* sio_reverse - Reverse a string (from K&R) */
+static void sio_reverse(char s[])
+{
+    int c, i, j;
+
+    for (i = 0, j = strlen(s)-1; i < j; i++, j--) {
+        c = s[i];
+        s[i] = s[j];
+        s[j] = c;
+    }
+}
+
+/* sio_ltoa - Convert long to base b string (from K&R) */
+static void sio_ltoa(long v, char s[], int b)
+{
+    int c, i = 0;
+    int neg = v < 0;
+
+    if (neg)
+        v = -v;
+
+    do {
+        s[i++] = ((c = (v % b)) < 10)  ?  c + '0' : c - 10 + 'a';
+    } while ((v /= b) > 0);
+
+    if (neg)
+        s[i++] = '-';
+
+    s[i] = '\0';
+    sio_reverse(s);
+}
+
+/* sio_strlen - Return length of string (from K&R) */
+static size_t sio_strlen(char s[])
+{
+    int i = 0;
+
+    while (s[i] != '\0')
+        ++i;
+    return i;
+}
+/* $end sioprivate */
+
+/* Public Sio functions */
+/* $begin siopublic */
+
+ssize_t sio_puts(char s[]) /* Put string */
+{
+    return write(STDOUT_FILENO, s, sio_strlen(s)); //line:csapp:siostrlen
+}
+
+ssize_t sio_putl(long v) /* Put long */
+{
+    char s[128];
+
+    sio_ltoa(v, s, 10); /* Based on K&R itoa() */  //line:csapp:sioltoa
+    return sio_puts(s);
+}
+
+void sio_error(char s[]) /* Put error message and exit */
+{
+    sio_puts(s);
+    _exit(1);                                      //line:csapp:sioexit
+}
+/* $end siopublic */
+
+/*******************************
+ * Wrappers for the SIO routines
+ ******************************/
+ssize_t Sio_putl(long v)
+{
+    ssize_t n;
+
+    if ((n = sio_putl(v)) < 0)
+        sio_error("Sio_putl error");
+    return n;
+}
+
+ssize_t Sio_puts(char s[])
+{
+    ssize_t n;
+
+    if ((n = sio_puts(s)) < 0)
+        sio_error("Sio_puts error");
+    return n;
+}
+
+void Sio_error(char s[])
+{
+    sio_error(s);
 }
