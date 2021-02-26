@@ -19,6 +19,7 @@
 #define MAXARGS     128   /* max args on a command line */
 #define MAXJOBS      16   /* max jobs at any point in time */
 #define MAXJID    1<<16   /* max job ID */
+#define MAXHIST     100   /* max history commands */
 
 /* Job states */
 #define UNDEF 0 /* undefined */
@@ -50,6 +51,9 @@ struct job_t {              /* The job struct */
     char cmdline[MAXLINE];  /* command line */
 };
 struct job_t jobs[MAXJOBS]; /* The job list */
+
+char **history = NULL;
+int history_len = 0;
 /* End global variables */
 
 
@@ -64,6 +68,11 @@ void waitfg(pid_t pid);
 void sigchld_handler(int sig);
 void sigtstp_handler(int sig);
 void sigint_handler(int sig);
+
+/* History */
+int history_add(const char *cmdline);
+void history_list(void);
+void history_free(void);
 
 /* Here are helper routines that we've provided for you */
 int parseline(const char *cmdline, char **argv);
@@ -192,14 +201,15 @@ void eval(char *cmdline)
 
     strcpy(buf, cmdline);
     bg = parseline(buf, argv);
+//    printf("bg is %d\n", bg);
     if(argv[0] == NULL)     /* Ignore empty lines */
         return;
+
+    history_add(cmdline);
 
     Sigfillset(&mask_all);
     Sigemptyset(&mask_one);
     Sigaddset(&mask_one, SIGCHLD);
-
-
 
     if(!builtin_cmd(argv)){     // executable file
         /* Eliminate "Race" */
@@ -207,7 +217,7 @@ void eval(char *cmdline)
         if((pid = Fork()) == 0){// child process
             //TODO why?
             setpgid(0, 0);
-            /* puts the child in a new process group whose group ID is identical to
+                                        /* puts the child in a new process group whose group ID is identical to
                                         * the child’s PID.
                                         * This ensures that there will be only one process, your shell, in the
                                         * foreground process group. When you type ctrl-c, the shell should catch
@@ -227,6 +237,8 @@ void eval(char *cmdline)
 
         if(!bg){            /* the job runs in fg */
             waitfg(pid);
+//            printf("SHOULDN'T\n");
+//            printf("%d\n", jobs[pid2jid(pid)].state);
         }
         else{               /* the job runs in bg */
             printf("[%d] (%d): %s", pid2jid(pid), pid, cmdline);
@@ -255,6 +267,10 @@ int builtin_cmd(char **argv)
         do_bgfg(argv);
         return 1;
     }
+    if(!strcmp(argv[0], "history")){
+        history_list();
+        return 1;
+    }
     return 0;     /* not a builtin command */
 }
 
@@ -271,15 +287,21 @@ void do_bgfg(char **argv)
         return;
     }
 
-    if(id[0] == '%'){
+    if(id[0] == '%'){ //job id
         int jid = atoi(&id[1]);
         job = getjobjid(jobs, jid);
-        if(job == NULL){
-            printf("%%%d: No such job\n", jid);
-            return;
-        }
-    }else{
+    }
+    else if(strspn(id, "0123456789") == strlen(id)){ //pid
+        int pid = atoi(id);
+        job = getjobpid(jobs, pid);
+    }
+    else{
         printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+        return;
+    }
+
+    if(job == NULL){
+        printf("No such job\n");
         return;
     }
 
@@ -302,9 +324,55 @@ void waitfg(pid_t pid)
 {
     //TODO suspend version
     while(pid == fgpid(jobs)){
-        sleep(1);
+        sleep(0);
     }
     return;
+}
+
+int history_add(const char *cmdline)
+{
+    char *linecopy;
+    /* Initialize */
+    if(history == NULL){
+        history = malloc(sizeof(char *) * MAXHIST);
+        if(history == NULL){
+            Sio_puts("Add history failed");
+            return 1;
+        }
+        memset(history, 0, sizeof(char *) * MAXHIST);
+    }
+
+    /* Add an heap allocated copy of the line in the history.
+     * If we reached the max length, remove the older line. */
+    linecopy = strdup(cmdline);
+    if (!linecopy) return 0;
+    if (history_len == MAXHIST) {
+        free(history[0]);
+        memmove(history,history+1,sizeof(char*)*(MAXHIST-1));
+        history_len--;
+    }
+    history[history_len] = linecopy;
+    history_len++;
+    return 0;
+}
+
+/* Free the history, but does not reset it. Only used when we have to
+ * exit() to avoid memory leaks are reported by valgrind & co. */
+void history_free(void)
+{
+    if (history) {
+        for (int j = 0; j < history_len; j++)
+            free(history[j]);
+        free(history);
+    }
+}
+
+void history_list(void)
+{
+    if (history){
+        for (int i = 0; i < history_len; i++)
+            printf("%s\n", history[i]);
+    }
 }
 
 /*****************
@@ -324,42 +392,34 @@ void sigchld_handler(int sig)
     sigset_t mask_all, prev_all;
     int status;
     pid_t pid;
-//    printf("%s\n", strerror(errno));
+
     Sigfillset(&mask_all);
     while((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) /* Reap a zombie child */
     {
-        // TODO: different status
-//        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-//        deletejob(jobs, pid);
-//        Sigprocmask(SIG_SETMASK, &prev_all, NULL);
-//        if(WIFSIGNALED(status))
-//            printf("Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, WTERMSIG(status));
-//        if(WIFSTOPPED(status)) {
-//            printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, WSTOPSIG(status));
-//            struct job_t *job = getjobpid(jobs, pid);
-//            if (job != NULL)
-//                job->state = ST;
-//        }
         if(WIFEXITED(status)){  /*process is exited in normal way*/
-            deletejob(jobs,pid);
+            Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+            deletejob(jobs, pid);
+            Sigprocmask(SIG_SETMASK, &prev_all, NULL);
         }
         if(WIFSIGNALED(status)){/*process is terminated by a signal*/
             printf("Job [%d] (%d) terminated by signal %d\n",pid2jid(pid),pid,WTERMSIG(status));
-            deletejob(jobs,pid);
+            Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+            deletejob(jobs, pid);
+            Sigprocmask(SIG_SETMASK, &prev_all, NULL);
         }
         if(WIFSTOPPED(status)){/*process is stop because of a signal*/
             printf("Job [%d] (%d) stopped by signal %d\n",pid2jid(pid),pid,WSTOPSIG(status));
             struct job_t *job = getjobpid(jobs,pid);
-            if(job !=NULL )job->state = ST;
+            if(job !=NULL )
+                job->state = ST;
         }
 //        Sio_puts("sigchld_handler\n");
     }
 
-    if(errno != ECHILD){
-        printf("%s\n", strerror(errno));
-        unix_error("waitpid error");
-//        Sio_error("Fuck waitpid error\n");
-    }
+//    if(errno != ECHILD){
+//        unix_error("waitpid error");
+////        Sio_error("Fuck waitpid error\n");
+//    }
 
     errno = olderrno;
 }
@@ -372,7 +432,7 @@ void sigchld_handler(int sig)
 void sigint_handler(int sig)
 {
     pid_t pid = fgpid(jobs);
-    if(pid > 0)
+    if(pid != 0)
         Kill(-pid, SIGINT);
     Sio_puts("sigint_handler\n");
 }
@@ -385,8 +445,14 @@ void sigint_handler(int sig)
 void sigtstp_handler(int sig)
 {
     pid_t pid =fgpid(jobs);
-    if(pid > 0)
-        Kill(-pid, SIGTSTP);
+    if(pid!=0 ){
+        struct job_t *job = getjobpid(jobs,pid);
+        if(job->state == ST){  /*already stop the job ,do‘t do it again*/
+            return;
+        }else{
+            Kill(-pid,SIGTSTP);
+        }
+    }
     Sio_puts("sigtstp_handler\n");
 }
 
@@ -512,7 +578,6 @@ int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline)
 int deletejob(struct job_t *jobs, pid_t pid)
 {
     int i;
-    Sio_puts("I'm called\n");
     if (pid < 1)
 	return 0;
 
@@ -662,6 +727,7 @@ handler_t *Signal(int signum, handler_t *handler)
  */
 void sigquit_handler(int sig)
 {
+    history_free();
     printf("Terminating after receipt of SIGQUIT signal\n");
     exit(1);
 }
@@ -717,10 +783,8 @@ void Kill(pid_t pid, int signum)
 pid_t Waitpid(pid_t pid, int *iptr, int options)
 {
     pid_t retpid;
-    fprintf(stderr, "%s\n", strerror(errno));
 
-    if ((retpid  = waitpid(pid, iptr, options)) < 0)
-        printf("%s\n", strerror(errno));
+    if((retpid  = waitpid(pid, iptr, options)) < 0)
         unix_error("Waitpid error");
     return(retpid);
 }
@@ -782,21 +846,21 @@ static size_t sio_strlen(char s[])
 
 ssize_t sio_puts(char s[]) /* Put string */
 {
-    return write(STDOUT_FILENO, s, sio_strlen(s)); //line:csapp:siostrlen
+    return write(STDOUT_FILENO, s, sio_strlen(s));
 }
 
 ssize_t sio_putl(long v) /* Put long */
 {
     char s[128];
 
-    sio_ltoa(v, s, 10); /* Based on K&R itoa() */  //line:csapp:sioltoa
+    sio_ltoa(v, s, 10); /* Based on K&R itoa() */
     return sio_puts(s);
 }
 
 void sio_error(char s[]) /* Put error message and exit */
 {
     sio_puts(s);
-    _exit(1);                                      //line:csapp:sioexit
+    _exit(1);
 }
 /* $end siopublic */
 
