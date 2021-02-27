@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <fcntl.h>
 
 /* Misc manifest constants */
 #define MAXLINE    1024   /* max line size */
@@ -200,25 +201,28 @@ int main(int argc, char **argv)
 void eval(char *cmdline)
 {
     char *argv[MAXARGS];    /* Argument list execve() */
-//    char **argv_sub;        /* multiple argvs in Pipe */
     char buf[MAXLINE];      /* Holds modified command line*/
     int bg;                 /* Should the job run in bg or fg? */
     pid_t pid;
     sigset_t mask_all, mask_one, prev_one; /* Block bit vector */
-//    int first = 1;
-//    int input = 0;
-//    char *pipe_sign;
-//
-//    buf = strdup(cmdline);
-//    printf("%s\n", &cmdline[-1]);
-//    pipe_sign = strsep(&buf, "|"); /* Find first "|" */
-//
-//    bg = parseline(pipe_sign, argv);
+
+    int redir = 0;
+    char output[64];
+
     strcpy(buf, cmdline);
     bg = parseline(buf, argv);
 
     if(argv[0] == NULL)     /* Ignore empty lines */
         return;
+
+    // find '>'
+    for(int i = 0; argv[i] != NULL; i++) {
+        if (!strcmp(argv[i], ">")) {
+            argv[i] = NULL;
+            strcpy(output, argv[i + 1]);
+            redir = 1;
+        }
+    }
 
     Sigfillset(&mask_all);
     Sigemptyset(&mask_one);
@@ -227,16 +231,22 @@ void eval(char *cmdline)
     if(!builtin_cmd(argv)){     // executable file
         /* Eliminate "Race" */
         Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
-        if((pid = Fork()) == 0){// child process
-            //TODO why?
-            setpgid(0, 0);
-            /* puts the child in a new process group whose group ID is identical to
-            * the child’s PID.
-            * This ensures that there will be only one process, your shell, in the
-            * foreground process group. When you type ctrl-c, the shell should catch
-            * the resulting SIGINT and then forward it to the appropriate foreground job
-            * (or more precisely, the process group that contains the foreground job).
-            * */
+
+        if((pid = Fork()) == 0){
+            /* Child process */
+            setpgid(0, 0); //TODO why?
+
+            //if redirection is needed
+            if (redir) {
+                int fd1 = creat(output, 0644);
+                if( fd1 < 0) {
+                    unix_error("creat fail");
+                }
+                dup2(fd1, STDOUT_FILENO);
+                close(fd1);
+                redir = 0;
+            }
+
             Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
             if(execve(argv[0], argv, environ) < 0){
                 printf("%s: Command not found. \n", argv[0]);
@@ -260,84 +270,6 @@ void eval(char *cmdline)
 
     return;
 }
-//
-//void execute(char **argv, int bg)
-//{
-//    pid_t pid;
-//    sigset_t mask_all, mask_one, prev_one; /* Block bit vector */
-//    int first = 1;
-//    int input = 0;
-//
-//    if(argv[0] == NULL)     /* Ignore empty lines */
-//        return;
-//
-//    Sigfillset(&mask_all);
-//    Sigemptyset(&mask_one);
-//    Sigaddset(&mask_one, SIGCHLD);
-//
-//    if(!builtin_cmd(argv)){     // executable file
-//        /* Eliminate "Race" */
-//        Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
-//        if((pid = Fork()) == 0){// child process
-//            //TODO why?
-//            setpgid(0, 0);
-//            Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
-//            if(execve(argv[0], argv, environ) < 0){
-//                printf("%s: Command not found. \n", argv[0]);
-//                exit(0);
-//            }
-//        }
-//
-//        Sigprocmask(SIG_BLOCK, &mask_all, NULL); //TODO when to unblock?
-//        addjob(jobs, pid, (bg ? BG : FG), cmdline);
-//        Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
-//
-//        if(!bg){            /* the job runs in fg */
-//            waitfg(pid);
-//        }
-//        else{               /* the job runs in bg */
-//            printf("[%d] (%d): %s", pid2jid(pid), pid, cmdline);
-//        }
-//    }
-//}
-
-/**
- * Handle pipe commands separate
- * @param: input    returned fd from previous command
- * @param: first    1 if this is the first command in pipe-sequence
- * @param: last     1 if this is the last command in pipe-sequence
- * @return: read fd
- * @example: $ls | grep shell | wc
- *      fd1 = command(0, 1, 0)
- *      fd2 = command(fd1, 0, 0)
- *      fd3 = command(fd2, 0, 1)
- * */
-//
-//int command(int input, int first, int last)
-//{
-//    int pipefd[2];
-//    Pipe(pipefd);
-//    if((pid = Fork()) == 0){
-//        if(first == 1 && last == 0 && input == 0){ // first pipe
-//            dup2(pipefd[PIPE_WRITE], STDOUT_FILENO);
-//        }
-//        else if(first == 0 && last == 0 && input != 0){ // middle pipes
-//            dup2(input, STDIN_FILENO);
-//            dup2(pipefd[PIPE_WRITE], STDOUT_FILENO);
-//        }
-//        else if(first == 0 && last !=0 && input !=0){ // last pipe
-//            dup2(input, STDIN_FILENO);
-//        }
-//    }
-//
-//    if(input != 0)
-//        close(input);
-//    close(pipefd[PIPE_WRITE]); // nothing more needs to be written
-//    if(last)
-//        close(pipefd[PIPE_READ]); // nothing more needs to be read
-//
-//    return pipefd[PIPE_READ];
-//}
 
 /*
  * parseline - Parse the command line and build the argv array.

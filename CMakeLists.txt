@@ -9,7 +9,7 @@ target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra -pedantic -Wno-error
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC
-        A2)
+        A1)
 
 target_link_libraries(${PROJECT_NAME}
-        A2)
+        A1)
