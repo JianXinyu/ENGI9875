@@ -12,7 +12,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
-//#include <readline/history.h> // history
 
 /* Misc manifest constants */
 #define MAXLINE    1024   /* max line size */
@@ -26,6 +25,10 @@
 #define FG 1    /* running in foreground */
 #define BG 2    /* running in background */
 #define ST 3    /* stopped */
+
+/* Pipe file descriptors */
+#define PIPE_READ   0
+#define PIPE_WRITE  1
 
 /*
  * Jobs states: FG (foreground), BG (background), ST (stopped)
@@ -103,6 +106,7 @@ void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
  * Wrappers for Unix process control functions
  ********************************************/
 pid_t Fork(void);
+int Pipe(int pipefd[2]);
 void Kill(pid_t pid, int signum);
 pid_t Waitpid(pid_t pid, int *iptr, int options);
 
@@ -194,6 +198,7 @@ int main(int argc, char **argv)
 void eval(char *cmdline)
 {
     char *argv[MAXARGS];    /* Argument list execve() */
+    char **argv_sub;        /* multiple argvs in Pipe */
     char buf[MAXLINE];      /* Holds modified command line*/
     int bg;                 /* Should the job run in bg or fg? */
     pid_t pid;
@@ -246,6 +251,64 @@ void eval(char *cmdline)
     }
 
     return;
+}
+
+
+/*
+ * parseline - Parse the command line and build the argv array.
+ *
+ * Characters enclosed in single quotes are treated as a single
+ * argument.  Return true if the user has requested a BG job, false if
+ * the user has requested a FG job.
+ */
+int parseline(const char *cmdline, char **argv, char **argv_sub)
+{
+    static char array[MAXLINE]; /* holds local copy of command line */
+    char *buf = array;          /* ptr that traverses command line */
+    char *delim;                /* points to first space delimiter */
+    int argc;                   /* number of args */
+    int bg;                     /* background job? */
+
+    strcpy(buf, cmdline);
+    buf[strlen(buf)-1] = ' ';  /* replace trailing '\n' with space */
+    while (*buf && (*buf == ' ')) /* ignore leading spaces */
+        buf++;
+
+    /* Build the argv list */
+    argc = 0;
+    if (*buf == '\'') {
+        buf++;
+        delim = strchr(buf, '\'');
+    }
+    else {
+        delim = strchr(buf, ' ');
+    }
+
+    while (delim) {
+        argv[argc++] = buf;
+        *delim = '\0';
+        buf = delim + 1;
+        while (*buf && (*buf == ' ')) /* ignore spaces */
+            buf++;
+
+        if (*buf == '\'') {
+            buf++;
+            delim = strchr(buf, '\'');
+        }
+        else {
+            delim = strchr(buf, ' ');
+        }
+    }
+    argv[argc] = NULL;
+
+    if (argc == 0)  /* ignore blank line */
+        return 1;
+
+    /* should the job run in the background? */
+    if ((bg = (*argv[argc-1] == '&')) != 0) {
+        argv[--argc] = NULL;
+    }
+    return bg;
 }
 
 
@@ -459,63 +522,6 @@ void sigtstp_handler(int sig)
 /*********************
  * End signal handlers
  *********************/
-
-/*
- * parseline - Parse the command line and build the argv array.
- *
- * Characters enclosed in single quotes are treated as a single
- * argument.  Return true if the user has requested a BG job, false if
- * the user has requested a FG job.
- */
-int parseline(const char *cmdline, char **argv)
-{
-    static char array[MAXLINE]; /* holds local copy of command line */
-    char *buf = array;          /* ptr that traverses command line */
-    char *delim;                /* points to first space delimiter */
-    int argc;                   /* number of args */
-    int bg;                     /* background job? */
-
-    strcpy(buf, cmdline);
-    buf[strlen(buf)-1] = ' ';  /* replace trailing '\n' with space */
-    while (*buf && (*buf == ' ')) /* ignore leading spaces */
-        buf++;
-
-    /* Build the argv list */
-    argc = 0;
-    if (*buf == '\'') {
-        buf++;
-        delim = strchr(buf, '\'');
-    }
-    else {
-        delim = strchr(buf, ' ');
-    }
-
-    while (delim) {
-        argv[argc++] = buf;
-        *delim = '\0';
-        buf = delim + 1;
-        while (*buf && (*buf == ' ')) /* ignore spaces */
-            buf++;
-
-        if (*buf == '\'') {
-            buf++;
-            delim = strchr(buf, '\'');
-        }
-        else {
-            delim = strchr(buf, ' ');
-        }
-    }
-    argv[argc] = NULL;
-
-    if (argc == 0)  /* ignore blank line */
-        return 1;
-
-    /* should the job run in the background? */
-    if ((bg = (*argv[argc-1] == '&')) != 0) {
-        argv[--argc] = NULL;
-    }
-    return bg;
-}
 
 /***********************************************
  * Helper routines that manipulate the job list
@@ -770,6 +776,15 @@ pid_t Fork(void)
     if(pid < 0)
         unix_error("Fork error");
     return pid;
+}
+
+int Pipe(int pipefd[2])
+{
+    int ret;
+    ret = pipe(pipefd);
+    if(ret < 0)
+        unix_error("Pipe error");
+    return ret;
 }
 
 void Kill(pid_t pid, int signum)
