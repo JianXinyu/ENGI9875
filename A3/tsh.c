@@ -1,7 +1,9 @@
 /*
- * tsh - A tiny shell program with job control
- *
- * <Put your name and login ID here>
+ * A tiny shell program with job control. It supports:
+ * 1. Cancellation: ctrl+c
+ * 2. Suspension: ctrl+z
+ * 3. History
+ * 4. Redirection
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,11 +29,6 @@
 #define FG 1    /* running in foreground */
 #define BG 2    /* running in background */
 #define ST 3    /* stopped */
-
-/* Pipe file descriptors */
-#define PIPE_READ   0
-#define PIPE_WRITE  1
-
 /*
  * Jobs states: FG (foreground), BG (background), ST (stopped)
  * Job state transitions and enabling actions:
@@ -44,10 +41,11 @@
 
 /* Global variables */
 extern char **environ;      /* defined in libc */
-char prompt[] = "tsh> ";    /* command line prompt (DO NOT CHANGE) */
+char prompt[] = "shell> ";  /* command line prompt */
 int verbose = 0;            /* if true, print additional output */
 int nextjid = 1;            /* next job ID to allocate */
 char sbuf[MAXLINE];         /* for composing sprintf messages */
+volatile sig_atomic_t pid_flag; /* to track whether SIGCHLD is received */
 
 struct job_t {              /* The job struct */
     pid_t pid;              /* job PID */
@@ -57,65 +55,65 @@ struct job_t {              /* The job struct */
 };
 struct job_t jobs[MAXJOBS]; /* The job list */
 
-char **history = NULL;
-int history_len = 0;
+char **history = NULL;  /* store the history commands */
+int history_len = 0;    /* record number of commands have been input */
 /* End global variables */
 
-
-/* Function prototypes */
-
-/* Here are the functions that you will implement */
+/* mainstream functions */
 void eval(char *cmdline);
+int parseline(const char *cmdline, char **argv);
 int builtin_cmd(char **argv);
 void do_bgfg(char **argv);
 void waitfg(pid_t pid);
 
+/* signal hanlers */
 void sigchld_handler(int sig);
 void sigtstp_handler(int sig);
 void sigint_handler(int sig);
+void sigquit_handler(int sig);
 
-/* History */
+/* history operation */
 int history_add(const char *cmdline);
 void history_list(void);
 void history_free(void);
 
-/* Here are helper routines that we've provided for you */
-int parseline(const char *cmdline, char **argv);
-void sigquit_handler(int sig);
-
-void clearjob(struct job_t *job);
-void initjobs(struct job_t *jobs);
-int maxjid(struct job_t *jobs);
-int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline);
-int deletejob(struct job_t *jobs, pid_t pid);
-pid_t fgpid(struct job_t *jobs);
-struct job_t *getjobpid(struct job_t *jobs, pid_t pid);
-struct job_t *getjobjid(struct job_t *jobs, int jid);
-int pid2jid(pid_t pid);
-void listjobs(struct job_t *jobs);
-
+/* helper functions */
 void usage(void);
 void unix_error(char *msg);
 void app_error(char *msg);
-typedef void handler_t(int);
 
+/********************
+ * job_t operations
+ *******************/
+void clearjob(struct job_t *job);   /* Clear the entries in a job struct */
+void initjobs(struct job_t *jobs);  /* Initialize the job list */
+int maxjid(struct job_t *jobs);		/* Returns largest allocated job ID */
+int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline);/* Add a job to the job list */
+int deletejob(struct job_t *jobs, pid_t pid);   /* Delete a job whose PID=pid from the job list */
+pid_t fgpid(struct job_t *jobs);                /* Return PID of current foreground job, 0 if no such job */
+struct job_t *getjobpid(struct job_t *jobs, pid_t pid); /* Find a job (by PID) on the job list */
+struct job_t *getjobjid(struct job_t *jobs, int jid);   /* Find a job (by JID) on the job list */
+int pid2jid(pid_t pid);             /* Map process ID to job ID */
+void listjobs(struct job_t *jobs);  /* Print the job list */
+
+/*********************************************
+ * Wrappers for Unix process control functions
+ ********************************************/
+pid_t Fork(void);
+void Kill(pid_t pid, int signum);
+pid_t Waitpid(pid_t pid, int *iptr, int options);
+typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 void Sigfillset(sigset_t *set);
 void Sigemptyset(sigset_t *set);
 void Sigaddset(sigset_t *set, int signum);
 void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
-/*********************************************
- * Wrappers for Unix process control functions
- ********************************************/
-pid_t Fork(void);
-int Pipe(int pipefd[2]);
-void Kill(pid_t pid, int signum);
-pid_t Waitpid(pid_t pid, int *iptr, int options);
 
+/***********
+ * Safe I/O
+ ***********/
 ssize_t sio_puts(char s[]);
-ssize_t sio_putl(long v);
 void sio_error(char s[]);
-ssize_t Sio_putl(long v);
 ssize_t Sio_puts(char s[]);
 void Sio_error(char s[]);
 
@@ -150,14 +148,10 @@ int main(int argc, char **argv)
     }
 
     /* Install the signal handlers */
-
-    /* These are the ones you will need to implement */
     Signal(SIGINT,  sigint_handler);   /* ctrl-c */
     Signal(SIGTSTP, sigtstp_handler);  /* ctrl-z */
     Signal(SIGCHLD, sigchld_handler);  /* Terminated or stopped child */
-
-    /* This one provides a clean way to kill the shell */
-    Signal(SIGQUIT, sigquit_handler);
+    Signal(SIGQUIT, sigquit_handler);  /* kill the shell */
 
     /* Initialize the job list */
     initjobs(jobs);
@@ -177,7 +171,9 @@ int main(int argc, char **argv)
             exit(0);
         }
 
+        /* add this command to the history */
         history_add(cmdline);
+
         /* Evaluate the command line */
         eval(cmdline);
         fflush(stdout);
@@ -237,20 +233,20 @@ void eval(char *cmdline)
             setpgid(0, 0); //TODO why?
 
             //if redirection is needed
-            if (redir) {
-                int fd1 = creat(output, 0644);
-                if( fd1 < 0) {
-                    unix_error("creat fail");
-                }
-                dup2(fd1, STDOUT_FILENO);
-                close(fd1);
-                redir = 0;
-            }
+//            if (redir) {
+//                int fd1 = creat(output, 0644);
+//                if( fd1 < 0) {
+//                    unix_error("creat fail");
+//                }
+//                dup2(fd1, STDOUT_FILENO);
+//                close(fd1);
+//                redir = 0;
+//            }
 
             Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
             if(execve(argv[0], argv, environ) < 0){
                 printf("%s: Command not found. \n", argv[0]);
-                exit(0);
+                return;
             }
         }
 
@@ -259,7 +255,11 @@ void eval(char *cmdline)
         Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
 
         if(!bg){            /* the job runs in fg */
-            waitfg(pid);
+            /* wait for SIGCHLD to be received */
+            pid_flag = 0;
+            while(!pid_flag)
+                sigsuspend(&prev_one);
+//            waitfg(pid);
 //            printf("SHOULDN'T\n");
 //            printf("%d\n", jobs[pid2jid(pid)].state);
         }
@@ -430,6 +430,9 @@ void waitfg(pid_t pid)
     return;
 }
 
+/*
+ * history_add - add a command line to the history list
+ */
 int history_add(const char *cmdline)
 {
     char *linecopy;
@@ -457,8 +460,10 @@ int history_add(const char *cmdline)
     return 0;
 }
 
-/* Free the history, but does not reset it. Only used when we have to
- * exit() to avoid memory leaks are reported by valgrind & co. */
+/*
+ * Free the history, but does not reset it. Only used when we have to
+ * exit() to avoid memory leaks
+ */
 void history_free(void)
 {
     if (history) {
@@ -468,6 +473,9 @@ void history_free(void)
     }
 }
 
+/*
+ * print all history command lines
+ */
 void history_list(void)
 {
     if (history){
@@ -479,7 +487,6 @@ void history_list(void)
 /*****************
  * Signal handlers
  *****************/
-
 /*
  * sigchld_handler - The kernel sends a SIGCHLD to the shell whenever
  *     a child job terminates (becomes a zombie), or stops because it
@@ -495,7 +502,7 @@ void sigchld_handler(int sig)
     pid_t pid;
 
     Sigfillset(&mask_all);
-    while((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) /* Reap a zombie child */
+    while((pid_flag = pid = Waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) /* Reap a zombie child */
     {
         if(WIFEXITED(status)){  /*process is exited in normal way*/
             Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
@@ -514,7 +521,7 @@ void sigchld_handler(int sig)
             if(job !=NULL )
                 job->state = ST;
         }
-//        Sio_puts("sigchld_handler\n");
+        Sio_puts("sigchld_handler\n");
     }
 
 //    if(errno != ECHILD){
@@ -557,6 +564,16 @@ void sigtstp_handler(int sig)
     Sio_puts("sigtstp_handler\n");
 }
 
+/*
+ * sigquit_handler - The driver program can gracefully terminate the
+ *    child shell by sending it a SIGQUIT signal.
+ */
+void sigquit_handler(int sig)
+{
+    history_free();
+    printf("Terminating after receipt of SIGQUIT signal\n");
+    exit(1);
+}
 /*********************
  * End signal handlers
  *********************/
@@ -770,16 +787,6 @@ handler_t *Signal(int signum, handler_t *handler)
     return (old_action.sa_handler);
 }
 
-/*
- * sigquit_handler - The driver program can gracefully terminate the
- *    child shell by sending it a SIGQUIT signal.
- */
-void sigquit_handler(int sig)
-{
-    history_free();
-    printf("Terminating after receipt of SIGQUIT signal\n");
-    exit(1);
-}
 
 void Sigfillset(sigset_t *set)
 {
@@ -852,42 +859,6 @@ pid_t Waitpid(pid_t pid, int *iptr, int options)
  * The Sio (Signal-safe I/O) package - simple reentrant output
  * functions that are safe for signal handlers.
  *************************************************************/
-
-/* Private sio functions */
-
-/* $begin sioprivate */
-/* sio_reverse - Reverse a string (from K&R) */
-static void sio_reverse(char s[])
-{
-    int c, i, j;
-
-    for (i = 0, j = strlen(s)-1; i < j; i++, j--) {
-        c = s[i];
-        s[i] = s[j];
-        s[j] = c;
-    }
-}
-
-/* sio_ltoa - Convert long to base b string (from K&R) */
-static void sio_ltoa(long v, char s[], int b)
-{
-    int c, i = 0;
-    int neg = v < 0;
-
-    if (neg)
-        v = -v;
-
-    do {
-        s[i++] = ((c = (v % b)) < 10)  ?  c + '0' : c - 10 + 'a';
-    } while ((v /= b) > 0);
-
-    if (neg)
-        s[i++] = '-';
-
-    s[i] = '\0';
-    sio_reverse(s);
-}
-
 /* sio_strlen - Return length of string (from K&R) */
 static size_t sio_strlen(char s[])
 {
@@ -897,22 +868,10 @@ static size_t sio_strlen(char s[])
         ++i;
     return i;
 }
-/* $end sioprivate */
-
-/* Public Sio functions */
-/* $begin siopublic */
 
 ssize_t sio_puts(char s[]) /* Put string */
 {
     return write(STDOUT_FILENO, s, sio_strlen(s));
-}
-
-ssize_t sio_putl(long v) /* Put long */
-{
-    char s[128];
-
-    sio_ltoa(v, s, 10); /* Based on K&R itoa() */
-    return sio_puts(s);
 }
 
 void sio_error(char s[]) /* Put error message and exit */
@@ -920,19 +879,8 @@ void sio_error(char s[]) /* Put error message and exit */
     sio_puts(s);
     _exit(1);
 }
-/* $end siopublic */
 
-/*******************************
- * Wrappers for the SIO routines
- ******************************/
-ssize_t Sio_putl(long v)
-{
-    ssize_t n;
-
-    if ((n = sio_putl(v)) < 0)
-        sio_error("Sio_putl error");
-    return n;
-}
+/* Wrappers for the SIO routines */
 
 ssize_t Sio_puts(char s[])
 {
