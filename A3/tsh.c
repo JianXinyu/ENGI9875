@@ -220,51 +220,52 @@ void eval(char *cmdline)
         }
     }
 
-    Sigfillset(&mask_all);
-    Sigemptyset(&mask_one);
-    Sigaddset(&mask_one, SIGCHLD);
+    sigfillset(&mask_all);
+    sigemptyset(&mask_one);
+    sigaddset(&mask_one, SIGCHLD);
 
     if(!builtin_cmd(argv)){     // executable file
         /* Eliminate "Race" */
         Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
 
-        if((pid = Fork()) == 0){
+        if((pid = fork()) == 0){
             /* Child process */
             setpgid(0, 0); //TODO why?
 
-            //if redirection is needed
-//            if (redir) {
-//                int fd1 = creat(output, 0644);
-//                if( fd1 < 0) {
-//                    unix_error("creat fail");
-//                }
-//                dup2(fd1, STDOUT_FILENO);
-//                close(fd1);
-//                redir = 0;
-//            }
+            /* if redirection is needed */
+            if (redir) {
+                int fd1 = creat(output, 0644);
+                if( fd1 < 0) {
+                    unix_error("creat fail");
+                }
+                dup2(fd1, STDOUT_FILENO);
+                close(fd1);
+                redir = 0;
+            }
 
             Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
             if(execve(argv[0], argv, environ) < 0){
                 printf("%s: Command not found. \n", argv[0]);
-                return;
+                exit(0);
             }
-        }
+            exit(0);
+        }else{
+            Sigprocmask(SIG_BLOCK, &mask_all, NULL); //TODO when to unblock?
+            addjob(jobs, pid, (bg ? BG : FG), cmdline);
+            sigprocmask(SIG_SETMASK,&mask_one,NULL);    /* Block SIGCHLD */
 
-        Sigprocmask(SIG_BLOCK, &mask_all, NULL); //TODO when to unblock?
-        addjob(jobs, pid, (bg ? BG : FG), cmdline);
-        Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
-
-        if(!bg){            /* the job runs in fg */
-            /* wait for SIGCHLD to be received */
-            pid_flag = 0;
-            while(!pid_flag)
-                sigsuspend(&prev_one);
-//            waitfg(pid);
-//            printf("SHOULDN'T\n");
+            if(!bg){            /* the job runs in fg */
+                /* wait for SIGCHLD to be received */
+                pid_flag = 0;
+                while(!pid_flag)
+                    sigsuspend(&prev_one);
+//                waitfg(pid);
 //            printf("%d\n", jobs[pid2jid(pid)].state);
-        }
-        else{               /* the job runs in bg */
-            printf("[%d] (%d): %s", pid2jid(pid), pid, cmdline);
+            }
+            else{               /* the job runs in bg */
+                printf("[%d] (%d): %s", pid2jid(pid), pid, cmdline);
+            }
+            Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
         }
     }
 
@@ -402,7 +403,7 @@ void do_bgfg(char **argv)
     }
 
     if(job == NULL){
-        printf("No such job\n");
+        printf("(%s): No such job\n", argv[1]);
         return;
     }
 
@@ -424,9 +425,15 @@ void do_bgfg(char **argv)
 void waitfg(pid_t pid)
 {
     //TODO suspend version
-    while(pid == fgpid(jobs)){
-        sleep(0);
-    }
+//    while(pid == fgpid(jobs)){
+//        sleep(0);
+//    }
+//
+    sigset_t mask;
+    sigemptyset(&mask);
+    pid_flag = 0;
+    while(!pid_flag)
+        sigsuspend(&mask);
     return;
 }
 
@@ -480,7 +487,7 @@ void history_list(void)
 {
     if (history){
         for (int i = 0; i < history_len; i++)
-            printf("%s\n", history[i]);
+            printf("%d  %s", i, history[i]);
     }
 }
 
@@ -502,9 +509,15 @@ void sigchld_handler(int sig)
     pid_t pid;
 
     Sigfillset(&mask_all);
-    while((pid_flag = pid = Waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) /* Reap a zombie child */
+
+    while((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) /* Reap a zombie child */
     {
+        if(pid == fgpid(jobs)){
+            pid_flag = 1;
+        }
+//        printf("%s\n", strerror(errno));
         if(WIFEXITED(status)){  /*process is exited in normal way*/
+//            unix_error("I'm called\n");
             Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
             deletejob(jobs, pid);
             Sigprocmask(SIG_SETMASK, &prev_all, NULL);
@@ -521,10 +534,11 @@ void sigchld_handler(int sig)
             if(job !=NULL )
                 job->state = ST;
         }
-        Sio_puts("sigchld_handler\n");
+//        Sio_puts("sigchld_handler\n");
     }
 
-//    if(errno != ECHILD){
+//    if(pid < 0 && errno != ECHILD){
+//        printf("%d\n", pid);
 //        unix_error("waitpid error");
 ////        Sio_error("Fuck waitpid error\n");
 //    }
@@ -542,7 +556,7 @@ void sigint_handler(int sig)
     pid_t pid = fgpid(jobs);
     if(pid != 0)
         Kill(-pid, SIGINT);
-    Sio_puts("sigint_handler\n");
+//    Sio_puts("sigint_handler\n");
 }
 
 /*
@@ -553,7 +567,7 @@ void sigint_handler(int sig)
 void sigtstp_handler(int sig)
 {
     pid_t pid =fgpid(jobs);
-    if(pid!=0 ){
+    if( pid != 0 ){
         struct job_t *job = getjobpid(jobs,pid);
         if(job->state == ST){  /*already stop the job ,do‘t do it again*/
             return;
@@ -561,7 +575,7 @@ void sigtstp_handler(int sig)
             Kill(-pid,SIGTSTP);
         }
     }
-    Sio_puts("sigtstp_handler\n");
+//    Sio_puts("sigtstp_handler\n");
 }
 
 /*
@@ -584,8 +598,6 @@ void sigquit_handler(int sig)
 
 /* clearjob - Clear the entries in a job struct */
 void clearjob(struct job_t *job) {
-//    for(int i = 0; i < MAXPIDS; i++)
-//        job->pid[i] = 0;
     job->pid = 0;
     job->jid = 0;
     job->state = UNDEF;
@@ -620,8 +632,7 @@ int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline)
         return 0;
 
     for (i = 0; i < MAXJOBS; i++) {
-        for(int j = 0; j < MAXPIDS; j++)
-        {
+        if (jobs[i].pid == 0) {
             jobs[i].pid = pid;
             jobs[i].state = state;
             jobs[i].jid = nextjid++;
@@ -632,9 +643,7 @@ int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline)
                 printf("Added job [%d] %d %s\n", jobs[i].jid, jobs[i].pid, jobs[i].cmdline);
             }
             return 1;
-
         }
-
     }
     printf("Tried to create too many jobs\n");
     return 0;
