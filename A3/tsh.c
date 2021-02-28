@@ -20,7 +20,6 @@
 #define MAXLINE    1024   /* max line size */
 #define MAXARGS     128   /* max args on a command line */
 #define MAXJOBS      16   /* max jobs at any point in time */
-#define MAXPIDS      6    /* max processes in a job */
 #define MAXJID    1<<16   /* max job ID */
 #define MAXHIST     100   /* max history commands */
 
@@ -45,7 +44,8 @@ char prompt[] = "shell> ";  /* command line prompt */
 int verbose = 0;            /* if true, print additional output */
 int nextjid = 1;            /* next job ID to allocate */
 char sbuf[MAXLINE];         /* for composing sprintf messages */
-volatile sig_atomic_t pid_flag; /* to track whether SIGCHLD is received */
+volatile sig_atomic_t pid_flag;     /* to track whether SIGCHLD is received, i.e.,
+                                    * whether the foreground process is reaped */
 
 struct job_t {              /* The job struct */
     pid_t pid;              /* job PID */
@@ -101,7 +101,6 @@ void listjobs(struct job_t *jobs);  /* Print the job list */
  ********************************************/
 pid_t Fork(void);
 void Kill(pid_t pid, int signum);
-pid_t Waitpid(pid_t pid, int *iptr, int options);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 void Sigfillset(sigset_t *set);
@@ -171,7 +170,7 @@ int main(int argc, char **argv)
             exit(0);
         }
 
-        /* add this command to the history */
+        /* Add this command to the history */
         history_add(cmdline);
 
         /* Evaluate the command line */
@@ -203,7 +202,7 @@ void eval(char *cmdline)
     sigset_t mask_all, mask_one, prev_one; /* Block bit vector */
 
     int redir = 0;
-    char output[64];
+    char pathname[64];
 
     strcpy(buf, cmdline);
     bg = parseline(buf, argv);
@@ -215,26 +214,26 @@ void eval(char *cmdline)
     for(int i = 0; argv[i] != NULL; i++) {
         if (!strcmp(argv[i], ">")) {
             argv[i] = NULL;
-            strcpy(output, argv[i + 1]);
+            strcpy(pathname, argv[i + 1]);
             redir = 1;
         }
     }
 
-    sigfillset(&mask_all);
-    sigemptyset(&mask_one);
-    sigaddset(&mask_one, SIGCHLD);
+    Sigfillset(&mask_all);
+    Sigemptyset(&mask_one);
+    Sigaddset(&mask_one, SIGCHLD);
 
     if(!builtin_cmd(argv)){     // executable file
         /* Eliminate "Race" */
         Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
 
-        if((pid = fork()) == 0){
+        if((pid = Fork()) == 0){
             /* Child process */
             setpgid(0, 0); //TODO why?
 
             /* if redirection is needed */
             if (redir) {
-                int fd1 = creat(output, 0644);
+                int fd1 = creat(pathname, 0644);
                 if( fd1 < 0) {
                     unix_error("creat fail");
                 }
@@ -246,7 +245,7 @@ void eval(char *cmdline)
             Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
             if(execve(argv[0], argv, environ) < 0){
                 printf("%s: Command not found. \n", argv[0]);
-                exit(0);
+                exit(1);
             }
             exit(0);
         }else{
@@ -256,11 +255,7 @@ void eval(char *cmdline)
 
             if(!bg){            /* the job runs in fg */
                 /* wait for SIGCHLD to be received */
-                pid_flag = 0;
-                while(!pid_flag)
-                    sigsuspend(&prev_one);
-//                waitfg(pid);
-//            printf("%d\n", jobs[pid2jid(pid)].state);
+                waitfg(pid);
             }
             else{               /* the job runs in bg */
                 printf("[%d] (%d): %s", pid2jid(pid), pid, cmdline);
@@ -340,27 +335,6 @@ int builtin_cmd(char **argv)
         exit(0);
     if(!strcmp(argv[0], "&")) // ignore singleton &
         return 1;
-    if(!strcmp(argv[0], "echo")){
-        if(!strcmp(argv[1], "$$")){
-            printf("%d\n", (int)getpid());
-        }
-        else{
-            printf("%s\n", argv[1]);
-        }
-        return 1;
-    }
-    if(!strcmp(argv[0], "cd")){
-        if(argv[1] == NULL){
-            printf("%s\n", getenv("HOME"));
-            if(chdir(getenv("HOME")) < 0)
-                unix_error("cd error");
-        }
-        else{
-            if(chdir(argv[1]) < 0)
-                unix_error("cd error");
-        }
-        return 1;
-    }
     if(!strcmp(argv[0], "jobs")){
         listjobs(jobs);
         return 1;
@@ -374,6 +348,25 @@ int builtin_cmd(char **argv)
         return 1;
     }
     return 0;     /* not a builtin command */
+}
+
+/*
+ * waitfg - Block until process pid is no longer the foreground process
+ * CSAPP 8.5.7
+ */
+void waitfg(pid_t pid)
+{
+    sigset_t mask;
+    sigemptyset(&mask);
+    pid_flag = 0;
+    while (!pid_flag){
+        sigsuspend(&mask);
+    }
+// another version
+//    while (pid == fgpid(jobs)){ /* pid is still the foreground process */
+//        sigsuspend(&mask);
+//    }
+    return;
 }
 
 /*
@@ -416,24 +409,6 @@ void do_bgfg(char **argv)
         waitfg(job->pid);
     }
 
-    return;
-}
-
-/*
- * waitfg - Block until process pid is no longer the foreground process
- */
-void waitfg(pid_t pid)
-{
-    //TODO suspend version
-//    while(pid == fgpid(jobs)){
-//        sleep(0);
-//    }
-//
-    sigset_t mask;
-    sigemptyset(&mask);
-    pid_flag = 0;
-    while(!pid_flag)
-        sigsuspend(&mask);
     return;
 }
 
@@ -510,14 +485,21 @@ void sigchld_handler(int sig)
 
     Sigfillset(&mask_all);
 
+    /* pid = -1: wait set consists of all of the parent's child processes
+     * WNOHANG|WUNTRACED: return 0 if none of the children in the wait set has stopped or terminated.
+     *                    return PID of one of the stopped or terminated children
+     * When all of the children have been reaped, the calling process has no children,
+     * the next call to waitpid returns −1 and sets errno to ECHILD */
+
+    /* we can't use Waitpid. Since we call waitpid in a while loop, the last call must give an error, it will exit
+     * in Waitpid. we don't want to exit, we want to continue, since it's a deliberate error. */
     while((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) /* Reap a zombie child */
     {
-        if(pid == fgpid(jobs)){
+        if(pid == fgpid(jobs)){ /* when foreground process is reaped */
             pid_flag = 1;
         }
-//        printf("%s\n", strerror(errno));
+
         if(WIFEXITED(status)){  /*process is exited in normal way*/
-//            unix_error("I'm called\n");
             Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
             deletejob(jobs, pid);
             Sigprocmask(SIG_SETMASK, &prev_all, NULL);
@@ -536,13 +518,11 @@ void sigchld_handler(int sig)
         }
 //        Sio_puts("sigchld_handler\n");
     }
-
-//    if(pid < 0 && errno != ECHILD){
-//        printf("%d\n", pid);
+    /* the waitpid function terminated normally */
+    if(pid < 0 && errno != ECHILD){
 //        unix_error("waitpid error");
-////        Sio_error("Fuck waitpid error\n");
-//    }
-
+        Sio_error("waitpid error\n");
+    }
     errno = olderrno;
 }
 
@@ -553,10 +533,18 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
+    int olderrno = errno;
+    sigset_t mask_all, prev_all;
+    Sigfillset(&mask_all);
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
     pid_t pid = fgpid(jobs);
+    Sigprocmask(SIG_SETMASK, &prev_all, NULL);
+
+    /* sends a SIGINT (number 2) to each process in the foreground process group. */
     if(pid != 0)
         Kill(-pid, SIGINT);
 //    Sio_puts("sigint_handler\n");
+    errno = olderrno;
 }
 
 /*
@@ -566,9 +554,14 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
+    int olderrno = errno;
+    sigset_t mask_all, prev_all;
+    Sigfillset(&mask_all);
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_all); /* Block all */
     pid_t pid =fgpid(jobs);
     if( pid != 0 ){
         struct job_t *job = getjobpid(jobs,pid);
+        Sigprocmask(SIG_SETMASK, &prev_all, NULL); /* Unblock */
         if(job->state == ST){  /*already stop the job ,do‘t do it again*/
             return;
         }else{
@@ -576,6 +569,7 @@ void sigtstp_handler(int sig)
         }
     }
 //    Sio_puts("sigtstp_handler\n");
+    errno = olderrno;
 }
 
 /*
@@ -747,7 +741,7 @@ void listjobs(struct job_t *jobs)
 
 
 /***********************
- * Other helper routines
+ * Misc helper routines
  ***********************/
 
 /*
@@ -780,6 +774,13 @@ void app_error(char *msg)
     exit(1);
 }
 
+/***********************
+ * End of misc helper routines
+ ***********************/
+
+/*********************************************
+ * Wrappers for Unix process control functions
+ ********************************************/
 /*
  * Signal - wrapper for the sigaction function
  */
@@ -824,10 +825,6 @@ void Sigaddset(sigset_t *set, int signum)
     return;
 }
 
-/** error-handling wrapper of fork()
- *      to simplify the code
- * @return pid
- */
 pid_t Fork(void)
 {
     pid_t pid;
@@ -835,15 +832,6 @@ pid_t Fork(void)
     if(pid < 0)
         unix_error("Fork error");
     return pid;
-}
-
-int Pipe(int pipefd[2])
-{
-    int ret;
-    ret = pipe(pipefd);
-    if(ret < 0)
-        unix_error("Pipe error");
-    return ret;
 }
 
 void Kill(pid_t pid, int signum)
@@ -854,15 +842,9 @@ void Kill(pid_t pid, int signum)
         unix_error("Kill error");
 }
 
-pid_t Waitpid(pid_t pid, int *iptr, int options)
-{
-    pid_t retpid;
-
-    if((retpid  = waitpid(pid, iptr, options)) < 0)
-        unix_error("Waitpid error");
-    return(retpid);
-}
-
+/*******************************************************
+ * End of Wrappers for Unix process control functions
+ ******************************************************/
 
 /*************************************************************
  * The Sio (Signal-safe I/O) package - simple reentrant output
