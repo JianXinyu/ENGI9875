@@ -29,7 +29,6 @@ main(int argc, char *argv[])
 {
 	int counter = 0;
 	struct timespec begin, end;
-
 	// Set C locale settings to get niceties like thousands separators
 	// for decimal numbers.
 	setlocale(LC_NUMERIC, "");

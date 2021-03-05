@@ -22,6 +22,8 @@
 #include <pthread.h>
 #include <string.h>
 
+void *increment(void *vargp);
+
 void *increment(void *vargp)
 {
 	long *countp = (long *) vargp;
@@ -42,45 +44,54 @@ int main(void)
 {
 	int counter = 0;
 	struct timespec begin, end;
-	pthread_t tid;
+	pthread_t **tids = malloc(sizeof(pthread_t *)*JOBS);
+	for(int i = 0; i < JOBS; i++){
+		tids[i] = malloc(sizeof(pthread_t));		
+	}
+//	pthread_t tids[JOBS];
+
 	// Set C locale settings to get niceties like thousands separators
 	// for decimal numbers.
 	setlocale(LC_NUMERIC, "");
+
 
 	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &begin) != 0)
 	{
 		err(-1, "Failed to get start time");
 	}
 
-	for (int i = 0; i < JOBS; i++)
-	{
-        pthread_create(&tid, NULL, increment, &counter);
+	for(int i = 0; i < JOBS; i++){
+              int rc;
+              if((rc=pthread_create(tids[i], NULL, increment, &counter))!=0)
+              {
+                      fprintf(stderr, "pthread_creat error: %s\n", strerror(rc));
+                      exit(0);
+              }
 	}
+	for (int i = 0; i < JOBS; i++) {
+       		 pthread_join(*tids[i], NULL);
+   	}
+	
 
 	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end) != 0)
 	{
 		err(-1, "Failed to get end time");
 	}
 
-    for (int i = 0; i < JOBS; i++) {
-        pthread_join(tid, NULL);
-    }
+//    for (int i = 0; i < JOBS; i++) {
+//        pthread_join(tid[i], NULL);
+//    }
 
-    //		int rc;
-//		if((rc=pthread_create(&tid, NULL, increment, &counter))!=0)
-//		{
-//			fprintf(stderr, "pthread_creat error: %s\n", strerror(rc));
-//			exit(0);
-//		}
-
-//pthread_exit(NULL);
 
 	long diff = end.tv_nsec - begin.tv_nsec;
 	diff += (1000 * 1000 * 1000) * (end.tv_sec - begin.tv_sec);
 
-	printf("Counted to %'d in %'ld ns: %f ns/iter\n",
-	       JOBS * WORK_PER_JOB, diff, ((double) diff) / counter);
+	// printf("Counted to %'d in %'ld ns: %f ns/iter\n",
+	//        JOBS * WORK_PER_JOB, diff, ((double) diff) / counter);
+		printf("Counted to %'d in %'ld ns: %f ns/iter\n",
+	       counter, diff, ((double) diff) / counter);
 
+	free(tids);
 	return 0;
 }
 
