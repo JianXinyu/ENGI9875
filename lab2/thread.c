@@ -39,7 +39,7 @@ struct foo * foo_create(void)
 
 int main(int argc, char **argv)
 {
-    ^{ printf("Hello World\n"); }
+//    ^{ printf("Hello World\n"); }
     long niters;
     pthread_t tid1, tid2;
 

@@ -144,6 +144,11 @@ Answer all of the following questions. Provide evidence for your claims.
 
 Download the C source file [serial.c](https://memorialu.gitlab.io/Engineering/ECE/Teaching/operating-systems/website/lab/2/serial.c). What does it do? Using the provided [Makefile](https://memorialu.gitlab.io/Engineering/ECE/Teaching/operating-systems/website/lab/2/Makefile), compile the source file into an executable program and run it. How long is required to execute each unit of work?
 
+```bash
+xy@xy-vm ~/D/E/lab2> ./serial
+Counted to 100 in 1,928 ns: 19.280000 ns/iter
+```
+
 Using the `awk(1)` program, filter the output of your program to keep only the time per work unit, outputting the result into a file:
 
 ```console
@@ -152,14 +157,117 @@ $ ./serial | awk '{ print $7 }' | tee -a initial-serial-times.dat
 
 Use the shell to run this command 999 more times. Using `head(1)` and `ministat(1)`, report the average and standard deviation for the first 3, 5, 10, 100 and 1000 runs. Comment on the significance of the number of measurements when measuring physical phenomena.
 
+```bash
+$ for i in $(seq 1000); do ./serial | awk '{ print $7 }' | tee -a initial_serial_times.dat; done
+
+$ for i in {3,5,10,100,1000}; do head -$i initial_serial_times.dat | ministat -A -s; done
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x   3         20.01         21.02         20.82     20.616667    0.53482084
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x   5         19.83          21.4         20.82        20.616    0.67166212
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x  10         19.58         30.93          21.4        22.578     3.6707426
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x 100         17.19         431.7         24.36       33.5844     42.934708
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x 1000         14.97       1758.24         23.81      37.61954     89.585545
+```
+
+With the number of measurements increase, we are highly likely to have bad data, e.g., we have max data point 1758 with N=1000, which will dramatically influence the Average and Standard Deviation. Since the number of bad points are small, they don't influence Median very much. 
+
+
+
 Explore the behaviour of this program by measuring the average per-unit-of-work execution time over varying values of `JOBS` and `WORK_PER_JOB`. For example, to delete (`clean`) the current version of the `serial` program and compile a new version with `JOBS` set to 100 and `WORK_PER_JOB` set to 100, you can run the following command:
 
-```console
+```shell
 $ make JOBS=100 WORK_PER_JOB=100 clean serial
-clang-5.0 -D JOBS=1000 -D WORK_PER_JOB=10 -Weverything -Wno-unused-parameter serial.c   -o serial
 ```
 
 How does the execution time vary with respect to `JOBS` and `WORK_PER_JOB`?
+
+To simplify the command, I wrote the script:
+
+```bash
+#!/bin/bash
+JOB=${1?Error: no JOBS given}
+WORK=${2?Error: no WORK_PER_JOB given}
+make JOBS=$JOB WORK_PER_JOB=$WORK clean serial
+export PATH="~/Documents/ENGI9875/lab2:$PATH"
+echo $PATH
+for i in $(seq 100)
+do
+        serial | awk '{ $7 }' | tee -a initial_serial_times.dat
+done
+
+for i in {5,10,100}
+do 
+        head -$i initial_serial_times.dat | ministat -A -s
+done
+```
+
+And save it as `lab.sh`
+
+At first,  we increased `WORK_PER_JOB` solely, set `JOBS=10 WORK_PER_JOB=100`:
+
+```shell
+$ ./lab.sh 10 100
+```
+
+The result became: 
+
+```shell
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x   5         4.132         4.826         4.301          4.38    0.26833841
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x  10         3.982         4.826         4.337        4.3553    0.24705737
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x 100          3.52        28.522         4.426       5.43476     3.1636723
+```
+
+Then set `JOBS=100 WORK_PER_JOB=10`
+
+```shell
+$ ./lab.sh 100 10
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x   5         4.074         6.178         4.524        4.7616    0.83976384
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x  10         4.074        37.292         4.524        7.8591     10.359304
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x 100         3.652        37.318         4.553       5.75477     4.8713627
+```
+
+Finally set `JOBS=100 WORK_PER_JOB=100`
+
+```shell
+$ ./lab.sh 100 100
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x   5        2.0385        2.5414        2.4017       2.31382    0.25125952
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x  10        2.0385        2.5414        2.4895       2.38999    0.19411224
+x <stdin>
+    N           Min           Max        Median           Avg        Stddev
+x 100        2.0053       15.5879        2.4605      2.672138     1.4997315
+```
+
+It is very clear that with the increase of `JOBS` and `WORK_PER_JOB`, the execution time is decreasing. Here are possible reasons:
+
+- there are some basic time consumption. The increased execution number will dilute this effect.
+- system schedules better when the execution number increase. 
+
+
 
 ### POSIX threads
 
