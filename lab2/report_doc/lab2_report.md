@@ -239,13 +239,15 @@ Your computer should have [R](https://www.r-project.org/), a statistical analysi
 
 Copy `serial.c` to a new file called `pthreads.c`; add it to the `Makefile`. Modify this new file to execute the work in parallel using `JOBS` threads (note: do **not** use your thread-safe `increment` implementation from the prelab — that will come in later). As you did in the previous section, measure the average time to complete each unit of work for varying values of `JOBS` and `WORK_PER_JOB`. Present these results using appropriate graphical techniques. Also plot *throughput speedup* vs number of parallel threads.
 
-Please refer to [Appendix](#posix-threads-code) for the modified code. Also, in order to avoid typing the same commands again and again, I improved the bash script, as shown in the [Appendix](#bash-script). To better plot, refer to [Appendix](#r) to see how I plot using R. The followings are raw data and plot. As we can see, when `WORK_PER_JOB` is small, the improvement that increasing `JOBS` brings is significant. However, when `WORK_PER_JOB` is big, e.g., 10000, increasing `JOBS` will also increase the average time. The reason might be the synchronizatoin error.
+Please refer to [Appendix](#posix-threads-code) for the modified code. Also, in order to avoid typing the same commands again and again, I improved the bash script, as shown in the [Appendix](#bash-script). To better plot, refer to [Appendix](#r) to see how I plot using R. The followings are raw data and plot. As we can see, when `WORK_PER_JOB` is small, the improvement that increasing `JOBS` brings is significant. However, when `WORK_PER_JOB` is big, e.g., 10000, increasing `JOBS` will also increase the average time. The reason might partly be the synchronizatoin error.
 
 ![image-20210306014746757](image-20210306014746757.png)
 
 ![](pthreads_job_unsafe.png)
 
+![pthreads_work_unsafe](pthreads_work_unsafe.png)
 
+![pthreads_throughput_unsafe](pthreads_throughput_unsafe.png)
 
 ### libdispatch
 
@@ -253,12 +255,21 @@ Copy `serial.c` to a new file called `libdispatch.c`; add it to the `Makefile` a
 
 The modified code is shown in [Appendix](#libdispatch-code). Here are results:
 
+![lib_job_unsafe](lib_job_unsafe.png)
+
+![lib_work_unsafe](lib_work_unsafe.png)
+
+![lib_throughput_unsafe](lib_throughput_unsafe.png)
+
 
 ### Race conditions
 
 Modify all three of your programs to print the actual value of `counter` rather than `JOBS * WORK_PER_JOB`. Explore how this value changes for varying values of `JOBS` and `WORK_PER_JOB` for both POSIX threads and `libdispatch`. Finally, modify your parallel programs to ensure that the correct value is counted. Plot throughput speed vs number of parallel threads in the POSIX case. Discuss your observations.
 
 Running multiple times with different `JOBS` and `WORK_PER_JOB` with each program. the result are as follows:
+
+![image-20210306015812816](image-20210306015812816.png)
+
 Apparently, when `JOB*WORK_PER_JOB` becomes big, the POSIX thread counter and the libdispatch counter wouldn't perform as we expected. In addition, we have different values each time. This is called sychronization error[^5]. Because the counter loop actually have several instructions. 
 
 > each concurrent execution defines some total ordering (or interleaving) of the in-
@@ -267,7 +278,9 @@ correct results, but others will not.
 
 Then I modified the `pthreads.c` to make it thread-safe, as shown in [Appendix](#posix-threads-code). Then thee counters are correct. Here is the plot:
 
+![pthreads_throughput_safe](pthreads_throughput_safe.png)
 
+As we observed before, it works well when  `WORK_PER_JOB` is small, the improvement that increasing `JOBS` brings is significant. However, when `WORK_PER_JOB` is big, increasing `JOBS` even has bad effects. But that is acceptable, since the absolute value of `Throughput`  is small. It might because some random errors. 
 
 [^1]: https://www.informit.com/articles/article.aspx?p=2085690&seqNum=3
 [^2]: CSAPP 3rd Section 12.7.1 
