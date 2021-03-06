@@ -1,4 +1,4 @@
-# Threading
+# Threading Lab Report - Xinyu Jian 
 
 ## Purpose and outcomes
 
@@ -163,23 +163,26 @@ $ for i in $(seq 1000); do ./serial | awk '{ print $7 }' | tee -a initial_serial
 $ for i in {3,5,10,100,1000}; do head -$i initial_serial_times.dat | ministat -A -s; done
 x <stdin>
     N           Min           Max        Median           Avg        Stddev
-x   3         20.01         21.02         20.82     20.616667    0.53482084
+x   3         12.71         26.99         26.91     22.203333     8.2215651
 x <stdin>
     N           Min           Max        Median           Avg        Stddev
-x   5         19.83          21.4         20.82        20.616    0.67166212
+x   5         12.71         26.99         23.49        22.578     5.8413629
 x <stdin>
     N           Min           Max        Median           Avg        Stddev
-x  10         19.58         30.93          21.4        22.578     3.6707426
+x  10         12.71         26.99         18.36         18.88     5.7357844
 x <stdin>
     N           Min           Max        Median           Avg        Stddev
-x 100         17.19         431.7         24.36       33.5844     42.934708
+x 100         11.02         29.08         17.64        17.878     3.8285717
 x <stdin>
     N           Min           Max        Median           Avg        Stddev
-x 1000         14.97       1758.24         23.81      37.61954     89.585545
+x 1000         10.26        327.97          17.4      18.83886     12.390978
 ```
 
-With the number of measurements increase, we are highly likely to have bad data, e.g., we have max data point 1758 with N=1000, which will dramatically influence the Average and Standard Deviation. Since the number of bad points are small, they don't influence Median very much. 
+Normally, the larger measurment numbers, the better. Because there are inevitablely some random errors, increaing the number of measurments can offset these random errors.
 
+However, here we observed a tradeoff. 
+
+With the number of measurements increase, we are highly likely to have bad data, e.g., we have Max data point 327.97 with N=1000, which will dramatically influence the Standard Deviation. The Average didn't change alot compared with N=100, because this time we don't have several really really bad points. If we're no lucky, e.g., with Max point 10000, then the Average will change a lot. Since the number of bad points are small, they don't influence Median very much. By observation, N=100 is a relatively good choice. 
 
 
 Explore the behaviour of this program by measuring the average per-unit-of-work execution time over varying values of `JOBS` and `WORK_PER_JOB`. For example, to delete (`clean`) the current version of the `serial` program and compile a new version with `JOBS` set to 100 and `WORK_PER_JOB` set to 100, you can run the following command:
@@ -190,7 +193,7 @@ $ make JOBS=100 WORK_PER_JOB=100 clean serial
 
 How does the execution time vary with respect to `JOBS` and `WORK_PER_JOB`?
 
-To simplify the command, I wrote the script:
+To simplify the command, I wrote the bash script:
 
 ```bash
 #!/bin/bash
@@ -209,58 +212,18 @@ do
         head -$i initial_serial_times.dat | ministat -A -s
 done
 ```
-
 And save it as `lab.sh`
 
-At first,  we increased `WORK_PER_JOB` solely, set `JOBS=10 WORK_PER_JOB=100`:
+Since N=100 is a good choice, I only run 100 times and calculate their statistics attributes.
+
+At first,  I increased `WORK_PER_JOB` solely, set `JOBS=10 WORK_PER_JOB=100`:
 
 ```shell
 $ ./lab.sh 10 100
 ```
+Then change `JOBS` solely. Finally, change both. Here are results:
 
-The result became: 
 
-```shell
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x   5         4.132         4.826         4.301          4.38    0.26833841
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x  10         3.982         4.826         4.337        4.3553    0.24705737
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x 100          3.52        28.522         4.426       5.43476     3.1636723
-```
-
-Then set `JOBS=100 WORK_PER_JOB=10`
-
-```shell
-$ ./lab.sh 100 10
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x   5         4.074         6.178         4.524        4.7616    0.83976384
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x  10         4.074        37.292         4.524        7.8591     10.359304
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x 100         3.652        37.318         4.553       5.75477     4.8713627
-```
-
-Finally set `JOBS=100 WORK_PER_JOB=100`
-
-```shell
-$ ./lab.sh 100 100
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x   5        2.0385        2.5414        2.4017       2.31382    0.25125952
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x  10        2.0385        2.5414        2.4895       2.38999    0.19411224
-x <stdin>
-    N           Min           Max        Median           Avg        Stddev
-x 100        2.0053       15.5879        2.4605      2.672138     1.4997315
-```
 
 It is very clear that with the increase of `JOBS` and `WORK_PER_JOB`, the execution time is decreasing. Here are possible reasons:
 
@@ -271,23 +234,231 @@ It is very clear that with the increase of `JOBS` and `WORK_PER_JOB`, the execut
 
 ### POSIX threads
 
-Presenting complex data
-
+> Presenting complex data:
 Your computer should have [R](https://www.r-project.org/), a statistical analysis program, installed (you can start an R GUI session by running `R --gui=Tk`). R is not the only way to present statistical information, but it can draw boxplots, violin plots, 3D surface plots and contour plots. It’s a useful tool to learn.
 
 Copy `serial.c` to a new file called `pthreads.c`; add it to the `Makefile`. Modify this new file to execute the work in parallel using `JOBS` threads (note: do **not** use your thread-safe `increment` implementation from the prelab — that will come in later). As you did in the previous section, measure the average time to complete each unit of work for varying values of `JOBS` and `WORK_PER_JOB`. Present these results using appropriate graphical techniques. Also plot *throughput speedup* vs number of parallel threads.
+
+Please refer to [Appendix](#posix-threads-code) for the modified code. Also, in order to avoid typing the same commands repeatly, I improved the bash script, as shown in the [Appendix](#bash-script). To better plot, please refer to [Appendix](#r) to see how I plot using R. The followings are raw data and plot. As we can see, when `WORK_PER_JOB` is small, the improvement that increaing `JOBS` brings is significiant. However, when `WORK_PER_JOB` is big, e.g., 10000, increasing `JOBS` will also increase the average time. The reason might be the synchronizatoin error.
+
 
 ### libdispatch
 
 Copy `serial.c` to a new file called `libdispatch.c`; add it to the `Makefile` as well. Modify this new file to execute the work using `libdispatch` with `JOBS` asynchronous jobs. As you did in the previous section, measure the average time to complete each unit of work for varying values of `JOBS` and `WORK_PER_JOB`. Present these results using appropriate graphical techniques.
 
+The modified code is shown in [Appendix](#libdispatch-code). Here are results:
+
+
 ### Race conditions
 
 Modify all three of your programs to print the actual value of `counter` rather than `JOBS * WORK_PER_JOB`. Explore how this value changes for varying values of `JOBS` and `WORK_PER_JOB` for both POSIX threads and `libdispatch`. Finally, modify your parallel programs to ensure that the correct value is counted. Plot throughput speed vs number of parallel threads in the POSIX case. Discuss your observations.
+
+Running multiple times with different `JOBS` and `WORK_PER_JOB` with each program. the result are as follows:
+Apparently, when `JOB*WORK_PER_JOB` becomes big, the POSIX thread counter and the libdispatch counter wouldn't perform as we expected. In addition, we have different values each time. This is called sychronization error[^5]. Because the counter loop actually have several instructions. 
+> each concurrent execution defines some total ordering (or interleaving) of the in-
+structions in the different threads. Unfortunately, some of these orderings will produce
+correct results, but others will not.
+
+Then I modified the `pthreads.c` to make it thread-safe, as shown in [Appendix](#posix-threads-code). Then thee counters are correct. Here is the plot:
 
 
 
 [^1]: https://www.informit.com/articles/article.aspx?p=2085690&seqNum=3
 [^2]: CSAPP 3rd Section 12.7.1 
 [^3]: https://docs.microsoft.com/en-us/cpp/cpp/lambda-expressions-in-cpp?view=msvc-160
-[^ 4]: https://livebook.manning.com/book/objective-c-fundamentals/chapter-13/22 
+[^4]: https://livebook.manning.com/book/objective-c-fundamentals/chapter-13/22 
+[^5]: CSAPP 3rd Section 12.5
+
+## Appendix
+### POSIX threads code
+pthreads.c: thread unsafe
+
+To make it thread safe, uncomment comments.
+```c
+#include <err.h>
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <pthread.h>
+#include <string.h>
+
+void *increment(void *vargp);
+// volatile pthread_mutex_t plock;
+int main(void)
+{
+	int counter = 0;
+	struct timespec begin, end;
+	pthread_t **tids = malloc(sizeof(pthread_t *)*JOBS);
+	// int rc1 = pthread_mutex_init(&plock, NULL);
+	// if(rc1 != 0)
+	// {
+	// 	fprintf(stderr, "pthread_init error: %s\n", strerror(rc1));
+	// 	exit(0);
+	// }
+    
+	for(int i = 0; i < JOBS; i++){
+		tids[i] = malloc(sizeof(pthread_t));		
+	}
+
+	setlocale(LC_NUMERIC, "");
+
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &begin) != 0)
+	{
+		err(-1, "Failed to get start time");
+	}
+
+	for(int i = 0; i < JOBS; i++){
+              int rc2 = pthread_create(tids[i], NULL, increment, &counter);
+              if(rc2!=0)
+              {
+                      fprintf(stderr, "pthread_creat error: %s\n", strerror(rc2));
+                      exit(0);
+              }
+	}
+	for (int i = 0; i < JOBS; i++) {
+       		 pthread_join(*tids[i], NULL);
+   	}
+
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end) != 0)
+	{
+		err(-1, "Failed to get end time");
+	}
+
+	long diff = end.tv_nsec - begin.tv_nsec;
+	diff += (1000 * 1000 * 1000) * (end.tv_sec - begin.tv_sec);
+
+	printf("Counted to %'d in %'ld ns: %f ns/iter\n",
+	       counter, diff, ((double) diff) / counter);
+
+	free(tids);
+	return 0;
+}
+
+void *increment(void *vargp)
+{
+	long *countp = (long *) vargp;
+	for (int i = 0; i < WORK_PER_JOB; i++)
+	{
+		// pthread_mutex_lock(&plock);
+		(*countp)++;
+		// pthread_mutex_unlock(&plock);
+	}
+	return NULL;
+}
+
+```
+
+### libdispatch code
+libdispatch.c: thread unsafe
+
+
+To make it thread safe, uncomment comments.
+```c
+
+```
+
+### Bash script
+lab.sh
+```bash
+#!/bin/bash
+export PATH="~/Documents/ENGI9875/lab2:$PATH"
+name=${1? Type error}
+
+rm -f ${name}.dat
+# redirect it to /dev/null to not write to the standard output
+printf "JOBS\t WORK\t N\t Min\t Max\t Median\t Average\n" | tee -a ${name}.dat > /dev/null
+for j in 10 100 1000 10000
+do
+	for w in 10 100 1000 10000
+	do
+		make clean
+		make JOBS=$j WORK_PER_JOB=$w
+
+		for i in $(seq 100)
+		do
+			${name} | awk '{printf"%s\n", $7}' | tee -a ${name}_times.dat > /dev/null
+		done
+		
+		
+		for i in 100
+		do 
+			printf "%d\t %d\t" $j $w | tee -a ${name}.dat
+			head -$i ${name}_times.dat | ministat -A -s | awk 'NR>2{printf "%s\t%.1f\t%.1f\t%.1f\t%.1f\n", $2, $3, $4, $5, $6}'| tee -a ${name}.dat
+		done
+
+	done
+done
+
+# used for `Race conditions` 
+# rm -f race.dat
+# printf "JOBS\t WORK\t Counter\n" | tee -a race.dat
+# for j in 10 100 1000 10000
+# do
+# 	for w in 10 100 1000 10000
+# 	do
+# 		make clean
+# 		make JOBS=$j WORK_PER_JOB=$w
+# 		printf "%d\t %d\t" $j $w | tee -a race.dat
+# 		${name} | awk '{printf "%s\n", $3}' | tee -a race.dat
+# 	done
+# done
+```
+### Makefile
+```makefile
+BINARIES=\
+	 serial pthreads libdispatch
+
+
+JOBS?=		1000
+WORK_PER_JOB?=	1000
+
+CC=		clang	
+CFLAGS=		-D JOBS=${JOBS} -D WORK_PER_JOB=${WORK_PER_JOB} \
+			-Weverything -Wno-unused-parameter -g
+
+# We don't need to link all of the following libraries for every program that
+# we're going to compile, but there's no harm in attempting to do so
+# (the linker will ignore any code it isn't looking for):
+LDFLAGS = -ldispatch -pthread
+
+all: ${BINARIES}
+
+
+clean:
+	rm -f ${BINARIES}
+	rm -f serial_times.dat
+	rm -f pthreads_times.dat
+	rm -f libdispatch_times.dat
+
+```
+### R
+
+```R
+library(ggplot2)
+library(rlist)
+raw = read.table("~/Documents/ENGI9875/lab2/pthreads.dat", skip = 1)
+# raw = read.table("~/Documents/ENGI9875/lab2/libdispatch.dat", skip = 1)
+
+df = as.data.frame.matrix(raw) 
+JOBS <- df$V1
+WORK <- df$V2
+Average <- df$V7
+
+ggplot(df,aes(log(JOBS, 10), Average, group = WORK, color=WORK)) + geom_line()
+ggplot(df,aes(log(WORK, 10), Average, group = JOBS, color=JOBS)) + geom_line()
+
+Throughput <- vector(mode="numeric", length=0)
+Number_of_pthreads <- vector(mode="numeric", length=0)
+for(i in 1:dim(df)[1]){
+  if(!i%%4){
+    dem = Average[4]
+  }
+  else
+    dem = Average[i%%4]
+  Throughput <- c(Throughput, 1- Average[i]/dem) 
+}
+
+ggplot(df,aes(log(JOBS,10), Throughput, group = WORK, color=WORK)) + geom_line()
+
+```

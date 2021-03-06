@@ -1,9 +1,9 @@
 BINARIES=\
-	 serial pthreads
+	 serial pthreads libdispatch
 
 
-JOBS?=		10
-WORK_PER_JOB?=	10
+JOBS?=		1000
+WORK_PER_JOB?=	1000
 
 CC=		clang	
 CFLAGS=		-D JOBS=${JOBS} -D WORK_PER_JOB=${WORK_PER_JOB} \
