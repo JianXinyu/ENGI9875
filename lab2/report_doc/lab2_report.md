@@ -223,7 +223,7 @@ $ ./lab.sh 10 100
 ```
 Then change `JOBS` solely. Finally, change both. Here are results:
 
-
+![image-20210306014633476](image-20210306014633476.png)
 
 It is very clear that with the increase of `JOBS` and `WORK_PER_JOB`, the execution time is decreasing. Here are possible reasons:
 
@@ -239,7 +239,12 @@ Your computer should have [R](https://www.r-project.org/), a statistical analysi
 
 Copy `serial.c` to a new file called `pthreads.c`; add it to the `Makefile`. Modify this new file to execute the work in parallel using `JOBS` threads (note: do **not** use your thread-safe `increment` implementation from the prelab — that will come in later). As you did in the previous section, measure the average time to complete each unit of work for varying values of `JOBS` and `WORK_PER_JOB`. Present these results using appropriate graphical techniques. Also plot *throughput speedup* vs number of parallel threads.
 
-Please refer to [Appendix](#posix-threads-code) for the modified code. Also, in order to avoid typing the same commands repeatly, I improved the bash script, as shown in the [Appendix](#bash-script). To better plot, please refer to [Appendix](#r) to see how I plot using R. The followings are raw data and plot. As we can see, when `WORK_PER_JOB` is small, the improvement that increaing `JOBS` brings is significiant. However, when `WORK_PER_JOB` is big, e.g., 10000, increasing `JOBS` will also increase the average time. The reason might be the synchronizatoin error.
+Please refer to [Appendix](#posix-threads-code) for the modified code. Also, in order to avoid typing the same commands again and again, I improved the bash script, as shown in the [Appendix](#bash-script). To better plot, refer to [Appendix](#r) to see how I plot using R. The followings are raw data and plot. As we can see, when `WORK_PER_JOB` is small, the improvement that increasing `JOBS` brings is significant. However, when `WORK_PER_JOB` is big, e.g., 10000, increasing `JOBS` will also increase the average time. The reason might be the synchronizatoin error.
+
+![image-20210306014746757](image-20210306014746757.png)
+
+![](pthreads_job_unsafe.png)
+
 
 
 ### libdispatch
@@ -255,6 +260,7 @@ Modify all three of your programs to print the actual value of `counter` rather 
 
 Running multiple times with different `JOBS` and `WORK_PER_JOB` with each program. the result are as follows:
 Apparently, when `JOB*WORK_PER_JOB` becomes big, the POSIX thread counter and the libdispatch counter wouldn't perform as we expected. In addition, we have different values each time. This is called sychronization error[^5]. Because the counter loop actually have several instructions. 
+
 > each concurrent execution defines some total ordering (or interleaving) of the in-
 structions in the different threads. Unfortunately, some of these orderings will produce
 correct results, but others will not.
@@ -355,6 +361,63 @@ libdispatch.c: thread unsafe
 
 To make it thread safe, uncomment comments.
 ```c
+#include <err.h>
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <dispatch/dispatch.h>
+
+void *increment(void *vargp);
+
+// dispatch_semaphore_t semaphore;
+
+int main(int argc, char *argv[])
+{
+    int counter = 0;
+	struct timespec begin, end;
+	dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+	dispatch_group_t group = dispatch_group_create();
+	// semaphore = dispatch_semaphore_create(1);
+
+	setlocale(LC_NUMERIC, "");
+
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &begin) != 0)
+	{
+		err(-1, "Failed to get start time");
+	}
+
+	for (int i = 0; i < JOBS; i++)
+	{
+		dispatch_group_async_f(group, queue, &counter, increment);
+	}
+	dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end) != 0)
+	{
+		err(-1, "Failed to get end time");
+	}
+
+	long diff = end.tv_nsec - begin.tv_nsec;
+	diff += (1000 * 1000 * 1000) * (end.tv_sec - begin.tv_sec);
+
+	printf("Counted to %'d in %'ld ns: %f ns/iter\n",
+	       counter, diff, ((double) diff) / counter);
+
+	return 0;
+}
+
+void *increment(void *vargp)
+{
+	long *countp = (long *) vargp;
+	for (int i = 0; i < WORK_PER_JOB; i++)
+	{
+		// dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+		(*countp)++;
+		// dispatch_semaphore_signal(semaphore);
+	}
+    return NULL;
+}
 
 ```
 
@@ -430,7 +493,6 @@ clean:
 	rm -f serial_times.dat
 	rm -f pthreads_times.dat
 	rm -f libdispatch_times.dat
-
 ```
 ### R
 
