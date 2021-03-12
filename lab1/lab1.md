@@ -42,7 +42,7 @@
 
       4 instances
 
-      ![image-20210130150913755](/home/xy/Documents/9875/lab/./figures/image-20210130150913755.png)
+      ![image-20210130150913755](./figures/image-20210130150913755.png)
 
    2. Which file is most appropriate for your use in this lab? Why? (you may find the `uname(1)` program to be helpful – how?)
 
@@ -50,7 +50,7 @@
 
       `uname` can print system information. So I can use it to get the architecture type.
 
-      ![image-20210130154103910](/home/xy/Documents/9875/lab/./figures/image-20210130154103910.png)
+      ![image-20210130154103910](./figures/image-20210130154103910.png)
 
       
 
@@ -332,7 +332,7 @@ the system call number is used in the function name, all arguments equals except
 
    since we make a system call by calling interrupt `$0x80` using the `int` instruction, according to [Wiki](https://en.wikibooks.org/wiki/X86_Assembly/Interfacing_with_Linux#syscall), we should use the system call numbers from `unistd_32.h` and registers as follows:
 
-   ![1](/home/xy/Pictures/Screenshot from 2021-02-09 22-48-28.png)
+   ![image-20210312161755422](.\figures\image-20210312161755422.png)
 
    ```assembly
            .data
@@ -358,7 +358,7 @@ the system call number is used in the function name, all arguments equals except
 
    Since `syscall` is in x86_64 architecture, so we use the system call numbers from `unistd_64.h` and registers as follows:
 
-   ![2](/home/xy/Pictures/Screenshot from 2021-02-09 22-56-29.png)
+   ![image-20210312161907495](.\figures\image-20210312161907495.png)
 
    ```bash
            .data

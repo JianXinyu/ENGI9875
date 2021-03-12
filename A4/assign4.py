@@ -22,9 +22,10 @@ if __name__ == '__main__':
     miss = 0
     while True:
         print("page>", end='')
-        addr = (sys.stdin.readline()).strip('\n')
+        # readline can read EOF, don't use input()
+        addr = (sys.stdin.readline()).strip('\n')  # reduce \n
         # exit
-        if addr == " ":
+        if addr == " " or addr == '':
             print("All done, goodbye!")
             exit(0)
         addrList.append(addr)
@@ -35,6 +36,7 @@ if __name__ == '__main__':
         try:
             idx = memory.index(n)
             hits = hits + 1
+            print('NF')
             if policy == 'LRU' or policy == 'MRU':
                 update = memory.remove(n)
                 memory.append(n)  # puts it on MRU side
@@ -47,8 +49,6 @@ if __name__ == '__main__':
         victim = -1
         if idx == -1:
             # miss, replace?
-            # print('BUG count, cachesize:', count, cachesize)
-
             if count == cachesize:
                 # must replace
                 if policy == 'FIFO' or policy == 'LRU':
@@ -77,8 +77,6 @@ if __name__ == '__main__':
                     maxReplace = -1
                     replaceIdx = -1
                     replacePage = -1
-                    # print('OPT: access %d, memory %s' % (n, memory) )
-                    # print('OPT: replace from FUTURE (%s)' % addrList[addrIndex+1:])
                     for pageIndex in range(0, count):
                         page = memory[pageIndex]
                         # now, have page 'page' at index 'pageIndex' in memory
@@ -89,18 +87,15 @@ if __name__ == '__main__':
                             if page == futurePage:
                                 whenReferenced = futureIdx
                                 break
-                        # print('OPT: page %d is referenced at %d' % (page, whenReferenced))
                         if whenReferenced >= maxReplace:
-                            # print('OPT: ??? updating maxReplace (%d %d %d)' % (replaceIdx, replacePage, maxReplace))
                             replaceIdx = pageIndex
                             replacePage = page
                             maxReplace = whenReferenced
-                            # print('OPT: --> updating maxReplace (%d %d %d)' % (replaceIdx, replacePage, maxReplace))
                     victim = memory.pop(replaceIdx)
                 else:
                     print("Policy %s is undefined!" % policy)
                     exit(1)
-                    # print('OPT: replacing page %d (idx:%d) because I saw it in future at %d' % (victim, replaceIdx, whenReferenced))
+
                 print(" E%d" % victim)
             else:
                 # miss, but no replacement needed (cache not full)
