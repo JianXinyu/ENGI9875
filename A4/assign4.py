@@ -3,9 +3,21 @@ import random
 import sys
 
 if __name__ == '__main__':
-    param = input("algorithm>")
-    policy, cachesize = param.split(" ")
-    cachesize = int(cachesize)
+    print("For FIFO, LRU, CLOCK: algorithm> Policy CacheSize")
+    print("For Belady: algorithm> Policy CacheSize Page List")
+    print("{:<8}F -page fault".format('Output: '))
+    print("{:<8}NF-no page fault".format(''))
+    print("{:<8}E -evit page".format(''))
+    param = list(input("algorithm> ").split())
+    if len(param) < 2:
+        exit(0)
+    else:
+        policy = param[0]
+        cachesize = int(param[1])
+        if len(param) == 3:
+            # used in optimal policy
+            chtsht = param[2].split(',')
+                    
     clockbits = 2
 
     random.seed(10)
@@ -49,6 +61,7 @@ if __name__ == '__main__':
         victim = -1
         if idx == -1:
             # miss, replace?
+            # 2. page replacement
             if count == cachesize:
                 # must replace
                 if policy == 'FIFO' or policy == 'LRU':
@@ -80,10 +93,10 @@ if __name__ == '__main__':
                     for pageIndex in range(0, count):
                         page = memory[pageIndex]
                         # now, have page 'page' at index 'pageIndex' in memory
-                        whenReferenced = len(addrList)
+                        whenReferenced = len(chtsht)
                         # whenReferenced tells us when, in the future, this was referenced
-                        for futureIdx in range(addrIndex + 1, len(addrList)):
-                            futurePage = int(addrList[futureIdx])
+                        for futureIdx in range(len(addrList) + 1, len(addrList)):
+                            futurePage = int(chtsht[futureIdx])
                             if page == futurePage:
                                 whenReferenced = futureIdx
                                 break
@@ -115,3 +128,4 @@ if __name__ == '__main__':
             ref[n] += 1
             if ref[n] > clockbits:
                 ref[n] = clockbits
+
