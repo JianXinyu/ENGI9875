@@ -3,12 +3,23 @@ import random
 import sys
 
 if __name__ == '__main__':
-    print("For FIFO, LRU, CLOCK: algorithm> Policy CacheSize")
-    print("For Belady: algorithm> Policy CacheSize Page List")
+    print("For FIFO, LRU, CLOCK: algorithm> Policy:CacheSize")
+    print("For Belady: algorithm> Policy:CacheSize:Page List")
     print("{:<8}F -page fault".format('Output: '))
     print("{:<8}NF-no page fault".format(''))
     print("{:<8}E -evit page".format(''))
-    param = list(input("algorithm> ").split())
+
+    # if pipe input
+    if not sys.stdin.isatty():
+        print("fuck")
+        print("algorithm> ", end='')
+        raw_input = sys.stdin.readline()
+        print(raw_input, end='')
+    else:
+        raw_input = input("algorithm> ")
+
+    param = list(raw_input.split(':'))
+
     if len(param) < 2:
         exit(0)
     else:
@@ -33,28 +44,34 @@ if __name__ == '__main__':
     hits = 0
     miss = 0
     while True:
-        print("page>", end='')
+        print("page>", flush=True, end='')
         # readline can read EOF, don't use input()
-        addr = (sys.stdin.readline()).strip('\n')  # reduce \n
+        
+        if not sys.stdin.isatty():
+            addr = (sys.stdin.readline()).strip('\n')  # reduce \n
+            print(addr)
+        else:
+            addr = (sys.stdin.readline()).strip('\n')  # reduce \n
+        print(addr, end='')
         # exit
         if addr == " " or addr == '':
             print("All done, goodbye!")
             exit(0)
         addrList.append(addr)
-        print("%s" % addr, end='')
+        
 
         # 1. look up memory
         n = int(addr)
         try:
             idx = memory.index(n)
             hits = hits + 1
-            print('NF')
+            print('NF', flush=True)
             if policy == 'LRU' or policy == 'MRU':
                 update = memory.remove(n)
                 memory.append(n)  # puts it on MRU side
         except:
             # if not in memory
-            print("F", end=' ')
+            print("F", flush=True, end=' ')
             idx = -1
             miss = miss + 1
 
@@ -109,10 +126,10 @@ if __name__ == '__main__':
                     print("Policy %s is undefined!" % policy)
                     exit(1)
 
-                print(" E%d" % victim)
+                print(" E%d" % victim, flush=True)
             else:
                 # miss, but no replacement needed (cache not full)
-                print("")
+                print("", flush=True)
                 victim = -1
                 count = count + 1
 
