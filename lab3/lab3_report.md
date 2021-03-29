@@ -82,7 +82,51 @@ void get_rusage_string(char *buffer, size_t buffer_len);
 
 3. Set up the build by running the `setup-build.sh` script.
 
+   ```bash
+   $ chmod +x setup-build.sh
+   $ ./setup-build.sh
+   + mkdir -p build
+   + cd build
+   + cmake -G Ninja ..
+   -- The C compiler identification is GNU 7.5.0
+   -- The CXX compiler identification is GNU 7.5.0
+   -- Check for working C compiler: /usr/bin/cc
+   -- Check for working C compiler: /usr/bin/cc -- works
+   -- Detecting C compiler ABI info
+   -- Detecting C compiler ABI info - done
+   -- Detecting C compile features
+   -- Detecting C compile features - done
+   -- Check for working CXX compiler: /usr/bin/c++
+   -- Check for working CXX compiler: /usr/bin/c++ -- works
+   -- Detecting CXX compiler ABI info
+   -- Detecting CXX compiler ABI info - done
+   -- Detecting CXX compile features
+   -- Detecting CXX compile features - done
+   -- Looking for pthread.h
+   -- Looking for pthread.h - found
+   -- Looking for pthread_create
+   -- Looking for pthread_create - not found
+   -- Looking for pthread_create in pthreads
+   -- Looking for pthread_create in pthreads - not found
+   -- Looking for pthread_create in pthread
+   -- Looking for pthread_create in pthread - found
+   -- Found Threads: TRUE  
+   -- Configuring done
+   -- Generating done
+   -- Build files have been written to: /home/xy/ENGI9875/lab3/build
+   + ninja
+   [6/6] Linking C executable lab
+   + echo ok
+   ok
+   ```
+
 4. Build the project by running `ninja` within the `build` directory.
+
+   ```bash
+   $ cd build/
+   $ ninja -f build.ninja 
+   ninja: no work to do.
+   ```
 
 5. Generate a text file containing 10 MiB worth of pseudo-random data:
 
@@ -213,7 +257,11 @@ void get_rusage_string(char *buffer, size_t buffer_len);
 
 3. Plot page faults — major and minor — against total CPU time.
 
-   
+   														![image-20210328205539260](.\image-20210328205539260.png)
+  
+  ![image-20210328205619111](.\image-20210328205619111.png)
+  
+  As we can see, there are no major faults, only minor faults. The reason might be that we run the code just after we created the random.txt, the pages are still in the memory. Thus, there is no I/O activity. 
 
 ### ~~GUI~~
 
