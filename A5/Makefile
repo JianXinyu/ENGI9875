@@ -22,7 +22,6 @@ LDFLAGS=`pkg-config --libs fuse` -fsanitize=address
 
 OBJS=	\
 	assign4.o \
-	example.o \
 	fuse.o \
 
 all: fuse
