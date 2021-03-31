@@ -22,6 +22,25 @@
 
 #include "assign4.h"
 
+// Some hard-coded inode numbers:
+#define	ROOT_DIR	1
+#define	ASSIGN_DIR	2
+#define	USERNAME_FILE	3
+#define FEATURES_FILE   4
+#define	FILE_COUNT	4
+
+// Hard-coded content of the "assignment/username" file:
+static const char UsernameContent[] = "xjian\n";
+// Hard-coded content of the "assignment/features" file:
+static const char FeaturesContent[] = "Optional features implemented:\n\n "
+                                      "- Directory listing\n "
+                                      "- File modification\n "
+                                      "- File creation\n "
+                                      "- Directory creation\n";
+
+// Hard-coded stat(2) information for each directory and file:
+struct stat *file_stats;
+
 typedef struct {
     char* name;
     fuse_ino_t ino;
@@ -33,7 +52,6 @@ typedef struct {
     int numChildren;
 } inode_data_t;
 
-struct stat *file_stats;
 inode_data_t *data;
 int file_count = 0;
 int generation = 0;
@@ -46,23 +64,31 @@ assign4_init(void *userdata, struct fuse_conn_info *conn)
 {
     struct backing_file *backing = userdata;
     printf("%s '%s'\n", __func__, backing->bf_path);
+    file_stats = calloc(FILE_COUNT + 1, sizeof(struct stat));
 
-    file_count = 4;
+    file_stats[ROOT_DIR].st_ino = ROOT_DIR;
+    file_stats[ROOT_DIR].st_mode = S_IFDIR | AllRead | AllExec;
+    file_stats[ROOT_DIR].st_nlink = 1;
+    file_stats[ROOT_DIR].st_uid = geteuid();
 
-    file_stats = calloc(file_count+1, sizeof(struct stat));
-    file_stats[1].st_ino = 1;
-    file_stats[1].st_mode = S_IFDIR | AllRead | AllExec;
-    file_stats[1].st_nlink = 1;
-    file_stats[1].st_uid = geteuid();
-    file_stats[2].st_ino = 2;
-    file_stats[2].st_mode = S_IFDIR | AllRead | AllExec;
-    file_stats[2].st_nlink = 1;
-    file_stats[2].st_uid = geteuid();
-    file_stats[3].st_ino = 3;
-    file_stats[3].st_mode =  S_IFREG | AllRead;
-    file_stats[3].st_nlink = 1;
-    file_stats[3].st_uid = geteuid();
-    file_stats[3].st_size = 8;
+    file_stats[ASSIGN_DIR].st_ino = ASSIGN_DIR;
+    file_stats[ASSIGN_DIR].st_mode = S_IFDIR | AllRead | AllExec;
+    file_stats[ASSIGN_DIR].st_nlink = 1;
+    file_stats[ASSIGN_DIR].st_uid = geteuid();
+
+    file_stats[USERNAME_FILE].st_ino = USERNAME_FILE;
+    file_stats[USERNAME_FILE].st_mode = S_IFREG | AllRead;
+    file_stats[USERNAME_FILE].st_size = sizeof(UsernameContent);
+    file_stats[USERNAME_FILE].st_nlink = 1;
+    file_stats[USERNAME_FILE].st_uid = geteuid();
+
+    file_stats[FEATURES_FILE].st_ino = FEATURES_FILE;
+    file_stats[FEATURES_FILE].st_mode = S_IFREG | AllRead;
+    file_stats[FEATURES_FILE].st_size = sizeof(FeaturesContent);
+    file_stats[FEATURES_FILE].st_nlink = 1;
+    file_stats[FEATURES_FILE].st_uid = geteuid();
+
+    file_count = FILE_COUNT;
 
     data = malloc(sizeof(inode_data_t)*(file_count + 1));
 
@@ -100,17 +126,15 @@ assign4_init(void *userdata, struct fuse_conn_info *conn)
     data[4].name = strdup("features");
     data[4].ino = 4;
     data[4].parent = 2;
-    data[4].fileData = strdup("Optional features implemented:\n\n - Directory listing\n - File modification\n - File creation\n - Directory creation\n");
+    data[4].fileData = strdup("Optional features implemented:\n"
+                              "- Directory listing\n "
+                              "- File modification\n "
+                              "- File creation\n "
+                              "- Directory creation\n");
     data[4].fileDataLen = strlen(data[4].fileData);
     data[4].isDir = 0;
     data[4].children = NULL;
     data[4].numChildren = 0;
-
-    file_stats[4].st_ino = 4;
-    file_stats[4].st_mode =  S_IFREG | AllRead;
-    file_stats[4].st_nlink = 1;
-    file_stats[4].st_uid = geteuid();
-    file_stats[4].st_size = data[4].fileDataLen;
 }
 
 static void
