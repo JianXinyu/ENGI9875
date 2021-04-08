@@ -1,19 +1,3 @@
-/*
- * Copyright 2018 Jonathan Anderson
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +16,7 @@
 // Hard-coded content of the "assignment/username" file:
 static const char UsernameContent[] = "xjian\n";
 // Hard-coded content of the "assignment/features" file:
-static const char FeaturesContent[] = "Optional features implemented:\n\n "
+static const char FeaturesContent[] = "I have implemented the following optional features:\n "
                                       "- Directory listing\n "
                                       "- File modification\n "
                                       "- File creation\n "
@@ -117,7 +101,7 @@ assign4_init(void *userdata, struct fuse_conn_info *conn)
     data[3].name = strdup("username");
     data[3].ino = 3;
     data[3].parent = 2;
-    data[3].fileData = strdup("xjian\n");
+    data[3].fileData = strdup(UsernameContent);
     data[3].fileDataLen = strlen(data[3].fileData);
     data[3].isDir = 0;
     data[3].children = NULL;
@@ -126,11 +110,7 @@ assign4_init(void *userdata, struct fuse_conn_info *conn)
     data[4].name = strdup("features");
     data[4].ino = 4;
     data[4].parent = 2;
-    data[4].fileData = strdup("Optional features implemented:\n"
-                              "- Directory listing\n "
-                              "- File modification\n "
-                              "- File creation\n "
-                              "- Directory creation\n");
+    data[4].fileData = strdup(FeaturesContent);
     data[4].fileDataLen = strlen(data[4].fileData);
     data[4].isDir = 0;
     data[4].children = NULL;
@@ -165,9 +145,6 @@ assign4_create(fuse_req_t req, fuse_ino_t parent, const char *name,
 {
     printf("%s parent=%zu name='%s' mode=%d\n", __func__,
            parent, name, mode);
-
-
-
 
     //fuse_reply_create();
     fuse_reply_err(req, ENOSYS);
@@ -430,10 +407,10 @@ static struct fuse_lowlevel_ops assign4_ops = {
         .open           = assign4_open,
         .read           = assign4_read,
         .readdir        = assign4_readdir,
-//	.rmdir          = assign4_rmdir,
-//	.setattr        = assign4_setattr,
+        .rmdir          = assign4_rmdir,
+        .setattr        = assign4_setattr,
         .statfs         = assign4_statfs,
-//	.unlink         = assign4_unlink,
+	    .unlink         = assign4_unlink,
         .write          = assign4_write,
 };
 
