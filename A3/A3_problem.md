@@ -61,3 +61,11 @@ You must implement **at least four** of the following additional functional requ
 ## Deliverables
 
 To complete this assignment you must submit source code to Gradescope.
+
+
+
+# Result
+
+7/10
+
+![image-20210423122403985](.\score.png)

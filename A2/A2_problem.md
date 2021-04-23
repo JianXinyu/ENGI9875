@@ -39,3 +39,186 @@ I’m providing you with a few header and source files to get started with. You 
 ## Deliverables
 
 To complete this assignment you must submit both source code and your plot(s) to Gradescope. Use whatever vector or raster image format is convenient for you.
+
+# Autograder Results
+
+AUTOGRADER SCORE 8.0 / 8.0
+
+Autograder Output
+
+```
+Submission dir: 'submission'
+Student submitted 1 file(s):
+  submission/rtos-alloc.c: C source, ASCII text
+
+1 source file(s):
+  submission/rtos-alloc.c: C source, ASCII text
+
+Compiling 'submission/rtos-alloc.c'...
+clang -c -Wall -fPIC -I . -I /usr/local/include submission/rtos-alloc.c -o submission/rtos-alloc.c.o
+
+Compiling tests...
+clang++ -c -std=c++17 -Wall -fPIC -I . -I /usr/local/include -Wall tests.cpp -o tests.o
+
+Linking tests with submission...
+clang++ tests.o submission/rtos-alloc.c.o -lgrading -L /usr/local/lib -o tester
+
+Running submission... OK
+```
+
+basic allocation
+
+```
+Test description:
+ - allocate a pointer with rtos_malloc()
+ - check that ptr is not NULL
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
+
+large allocation
+
+```
+Test description:
+ - allocate 100 MiB with rtos_malloc()
+ - check that ptr is not NULL
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
+
+use a large allocation
+
+```
+Test description:
+ - allocate 100 M size_t array with rtos_malloc()
+ - check that ptr is not NULL - write data to the allocation
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
+
+valid allocation
+
+```
+Test description:
+ - allocate a pointer with rtos_malloc(8)
+ - check that rtos_is_valid(ptr) returns true
+ - check that rtos_alloc_size(ptr) returns no less than 8
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
+
+NULL is not a valid allocation
+
+```
+Test description:
+ - check that rtos_is_valid(NULL) returns false
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
+
+free()
+
+```
+Test description:
+ - allocate a pointer; check that it's valid
+ - free the pointer
+ - check that the pointer is no longer valid
+
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
+
+free(NULL)
+
+```
+Test description:
+ - free the NULL pointer (should cause no action)
+ - check that NULL remains invalid
+
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
+
+multiple allocations
+
+```
+Test description:
+ - allocate several objects of different sizes
+ - check that each allocation is no smaller than requested
+ - check that the total allocation size is the sum of parts
+
+
+--------------------------------------------------------------------------------
+Console output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Error output:
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+Result: passed
+```
