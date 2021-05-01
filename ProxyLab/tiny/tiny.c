@@ -247,11 +247,11 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
   
     if (Fork() == 0) { /* Child */
         /* Real server would set all CGI vars here */
-        setenv("QUERY_STRING", cgiargs, 1);
+        setenv("QUERY_STRING", cgiargs, 1); //line:netp:servedynamic:setenv
         Dup2(fd, STDOUT_FILENO);         /* Redirect stdout to client */
-        Execve(filename, emptylist, environ); /* Run CGI program */
+        Execve(filename, emptylist, environ); /* Run CGI program */ //line:netp:servedynamic:execve
     }
-    Wait(NULL); /* Parent waits for and reaps child */
+    Wait(NULL); /* Parent waits for and reaps child */ //line:netp:servedynamic:wait
 }
 /* $end serve_dynamic */
 

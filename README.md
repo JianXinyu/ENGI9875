@@ -10,7 +10,7 @@ Assignment 3:  7.0 / 10.0
 
 Assignment 4:  11.0 / 11.0
 
-Assignment 5: TBD
+Assignment 5: 5.5 / 12
 
 ## Lab
 
