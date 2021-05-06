@@ -1,21 +1,15 @@
-#include <stdio.h>
 #include "csapp.h"
 
 #include "cache.h" // cache
-#include "sbuf.h"
+// #include "sbuf.h"
 
-#define NTHREADS 4
-#define SBUFSIZE 16
+// #define NTHREADS 4
+// #define SBUFSIZE 16
 
-sbuf_t sbuf;    /* Shared buffer of connected descriptors */
+// sbuf_t sbuf;    /* Shared buffer of connected descriptors */
 
-/* Recommended max cache and object sizes */
-#define MAX_CACHE_SIZE 1049000
-#define MAX_OBJECT_SIZE 102400
-// cache
-#define LRU_MAGIC_NUMBER 9999
-#define CACHE_OBJS_COUNT 10
-cache_t cache;  /* Shared cache */
+// cache_t cache;  /* Shared cache */
+static web_cache wbuf;
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -49,15 +43,16 @@ int main(int argc, char **argv)
     struct sockaddr_storage clientaddr;
     pthread_t tid;
 
-    cache_init(&cache);
-    sbuf_init(&sbuf, SBUFSIZE);
+    cache_init(&wbuf, MAX_WEB);
+    // cache_init(&cache);
+    // sbuf_init(&sbuf, SBUFSIZE);
 
     // open a listening socket
     listenfd = Open_listenfd(argv[1]);
 
-    for (int i = 0; i < NTHREADS; i++) {    /* Create worker threads */
-        Pthread_create(&tid, NULL, thread, NULL);
-    }
+    // for (int i = 0; i < NTHREADS; i++) {    /* Create worker threads */
+    //     Pthread_create(&tid, NULL, thread, NULL);
+    // }
 
     // execute the typical infinite server loop
     while (1) {
@@ -68,27 +63,27 @@ int main(int argc, char **argv)
         *connfdp = Accept(listenfd, (SA *) &clientaddr, &clientlen);
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
 
-        sbuf_insert(&sbuf, *connfdp);
+        // sbuf_insert(&sbuf, *connfdp);
 
         printf("Accepted connection from (%s, %s)\n", hostname, port);
         // perform a transaction
-        // pthread_create(&tid, NULL, thread, connfdp);
+        pthread_create(&tid, NULL, thread, connfdp);
     }
     return 0;
 }
 
 void* thread(void *vargp){
-    // int connfd = *((int *) vargp);
-    // Pthread_detach(pthread_self());
-    // Free(vargp);
-    // doit(connfd);
-    // Close(connfd);
+    int connfd = *((int *) vargp);
     Pthread_detach(pthread_self());
-    while (1) {
-        int connfd = sbuf_remove(&sbuf);
-        doit(connfd);   /* Service client */
-        Close(connfd);
-    }
+    Free(vargp);
+    doit(connfd);
+    Close(connfd);
+    // Pthread_detach(pthread_self());
+    // while (1) {
+    //     int connfd = sbuf_remove(&sbuf);
+    //     doit(connfd);   /* Service client */
+    //     Close(connfd);
+    // }
 }
 
 /* 
@@ -130,13 +125,21 @@ void doit(int fd)
     read_requesthdrs(&rio);                              
 
     /* find cache */
-    int index;
-    if ((index = cache_find(&cache, uri)) != -1) {  /* cache hits */
-        read_pre(&cache, index);
-        Rio_writen(fd, cache.cacheobjs[index].obj, strlen(cache.cacheobjs[index].obj));
-        read_after(&cache, index);
+    char *ptr;
+    if ((ptr = cache_find(&wbuf, uri)) != NULL) {
+        Rio_writen(fd, ptr, strlen(ptr));
+        Free(ptr);
         return;
     }
+    ptr = Malloc(strlen(uri));
+    strcpy(ptr, uri);
+    // int index;
+    // if ((index = cache_find(&cache, uri)) != -1) {  /* cache hits */
+    //     read_pre(&cache, index);
+    //     Rio_writen(fd, cache.cacheobjs[index].obj, strlen(cache.cacheobjs[index].obj));
+    //     read_after(&cache, index);
+    //     return;
+    // }
 
     /* Parse URI from GET request */
     parse_uri(uri, hostname, port, filename);
@@ -159,7 +162,8 @@ void doit(int fd)
         if (buf_size < MAX_OBJECT_SIZE) {
             strcat(cache_buf, buf);
         }
-        Rio_writen(rio.rio_fd, buf, strlen(buf));
+        // Rio_writen(rio.rio_fd, buf, strlen(buf));
+        Rio_writen(rio.rio_fd, buf, n);
     }
         
 
@@ -167,7 +171,7 @@ void doit(int fd)
 
     /* store it in cache */
     if (buf_size < MAX_OBJECT_SIZE) {
-        cache_store(&cache, uri, cache_buf);
+        cache_put(&wbuf, ptr, cache_buf);
     }
 }
 /* $end doit */

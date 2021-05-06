@@ -1,111 +1,79 @@
 #include "csapp.h"
 #include "cache.h"
 
-/* Create an empty cache */
-void cache_init(cache_t *cache) {
-    for (int i = 0; i < CACHE_OBJS_COUNT; i++) {
-        cache->cacheobjs[i].readcnt = 0;
-        cache->cacheobjs[i].LRU = 0;
-        cache->cacheobjs[i].is_empty = 1;
-        sem_init(&(cache->cacheobjs[i].mutex), 0, 1);
-        sem_init(&(cache->cacheobjs[i].w), 0, 1);
-    }
+
+
+void cache_init(web_cache *cache, int n)
+{
+    cache->n = n;
+    cache->size_all = cache->read_cnt = cache->rear = cache->front = cache->objn_cnt = 0;
+    cache->obj = Calloc(n, sizeof(web_obj));
+    Sem_init(&cache->mutex, 0, 1);
+    Sem_init(&cache->write, 0, 1);
 }
 
-/* find uri is in the cache or not */
-int cache_find(cache_t *cache, char *uri) {
-    int i;
-    for (i = 0; i < CACHE_OBJS_COUNT; i++) {
-        read_pre(cache, i);
-        if ((cache->cacheobjs[i].is_empty==0) && (strcmp(uri, cache->cacheobjs[i].uri)==0)) {
+char* cache_find(web_cache *cache, char* dst)
+{
+    P(&cache->mutex);
+    cache->read_cnt++;
+    if (cache->read_cnt == 1)
+        P(&cache->write);
+    V(&cache->mutex);
+    
+    int i, n = cache->n;
+    int l = (cache->front+1) % n, len = cache->objn_cnt;
+    char *ans;
+    for (i = 0; i < len; i++)
+    {
+        web_obj *obj = cache->obj + l;
+        if (!strcmp(obj->dst, dst)) {
+            int size = obj->size;
+            ans = Malloc(size);
+            strcpy(ans, obj->cache);
             break;
         }
-        read_after(cache, i);
+        l = (l + 1) % n;
     }
-
-    if (i >= CACHE_OBJS_COUNT) return -1;    /* can not find url in the cache */
-    return i;
+    
+    P(&cache->mutex);
+    cache->read_cnt--;
+    if (cache->read_cnt == 0)
+        V(&cache->write);
+    V(&cache->mutex);
+    if (i == len) return NULL;
+    else return ans;
 }
 
-/* find an available cache */
-int  cache_eviction(cache_t *cache) {
-    int min = LRU_MAGIC_NUMBER;
-    int minindex = 0;
-    int i;
-    for (i = 0; i < CACHE_OBJS_COUNT; i++) {
-        read_pre(cache, i);
-        if (cache->cacheobjs[i].is_empty == 1) {
-            minindex = i;
-            read_after(cache, i);
-            break;
-        }
-
-        if (cache->cacheobjs[i].LRU < min) {
-            minindex = i;
-            read_after(cache, i);
-            continue;
-        }
-        read_after(cache, i);
+void cache_put(web_cache *wcache, char* dst, char* cache)
+{
+    P(&wcache->write);
+    
+    int cnt = wcache->objn_cnt, n = wcache->n;
+    if (cnt == n) {
+        int pos = (wcache->front+1) % n;
+        cache_remove(wcache, pos);
     }
-    return minindex;
-}
-
-void cache_store(cache_t *cache, char *uri, char *buf) {
-    int i = cache_eviction(cache);
-
-    write_pre(cache, i);
-
-    strcpy(cache->cacheobjs[i].uri, uri);
-    strcpy(cache->cacheobjs[i].obj, buf);
-    cache->cacheobjs[i].is_empty = 0;
-    cache->cacheobjs[i].LRU = LRU_MAGIC_NUMBER;
-    cache_lru(cache, i);
-
-    write_after(cache, i);
-}
-
-/* update the LRU number except the new cache one */
-void cache_lru(cache_t *cache, int index) {
-    int i;
-    for(i=0; i<index; i++)    {
-        write_pre(cache, i);
-        if(cache->cacheobjs[i].is_empty==0 && i!=index){
-            cache->cacheobjs[i].LRU--;
-        }
-        write_after(cache, i);
+    
+    int pos = (++wcache->rear) % n, size = strlen(cache);
+    web_obj *obj = wcache->obj + pos;
+    strcpy(obj->dst, dst);
+    strcpy(obj->cache, cache);
+    obj->size = size;
+    
+    wcache->size_all += size;
+    wcache->objn_cnt++;
+    while(wcache->size_all > MAX_CACHE_SIZE) {
+        int pos = (wcache->front+1) % n;
+        cache_remove(wcache, pos);
     }
-    i++;
-    for(; i<CACHE_OBJS_COUNT; i++) {
-        write_pre(cache, i);
-        if(cache->cacheobjs[i].is_empty==0 && i!=index){
-            cache->cacheobjs[i].LRU--;
-        }
-        write_after(cache, i);
-    }
+    
+    V(&wcache->write);
 }
 
-void read_pre(cache_t *cache, int i) {
-    P(&cache->cacheobjs[i].mutex);
-    cache->cacheobjs[i].readcnt++;
-    if (cache->cacheobjs[i].readcnt == 1) {   /* first in */
-        P(&cache->cacheobjs[i].w);
-    }
-    V(&cache->cacheobjs[i].mutex);
-}
-
-void read_after(cache_t *cache, int i) {
-    P(&cache->cacheobjs[i].mutex);
-    cache->cacheobjs[i].readcnt--;
-    if (cache->cacheobjs[i].readcnt == 0) {   /* Last out */
-        V(&cache->cacheobjs[i].w);
-    }
-    V(&cache->cacheobjs[i].mutex);
-}
-
-void write_pre(cache_t *cache, int i) {
-    P(&cache->cacheobjs[i].w);
-}
-
-void write_after(cache_t *cache, int i) {
-    V(&cache->cacheobjs[i].w);
+void cache_remove(web_cache *cache, int pos)
+{
+    web_obj *obj = cache->obj + pos;
+    cache->size_all -= obj->size;
+    cache->front = (cache->front+1) % cache->n;
+    cache->objn_cnt--;
 }
