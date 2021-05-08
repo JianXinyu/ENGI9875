@@ -1,15 +1,6 @@
 #include "csapp.h"
 
 #include "cache.h" // cache
-// #include "sbuf.h"
-
-// #define NTHREADS 4
-// #define SBUFSIZE 16
-
-// sbuf_t sbuf;    /* Shared buffer of connected descriptors */
-
-// cache_t cache;  /* Shared cache */
-static web_cache wbuf;
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -17,11 +8,9 @@ static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64;
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 void write_request(int fd, char *method, char *filename, char *hostname, char *port);
-int parse_uri(char *uri, char *hostname, char *port, char *filename);
-
+void parse_url(char *url, char *hostname, char *port, char *filename);
 void clienterror(int fd, char *cause, char *errnum, 
 		 char *shortmsg, char *longmsg);
-
 void sigpipe_handler();
 void *thread(void *vargp);
 
@@ -34,27 +23,20 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    /* CSAPP Page987 Aside */
-    Signal(SIGPIPE, sigpipe_handler);
-
-    int listenfd, connfd, *connfdp;
+    int listenfd, *connfdp;
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     pthread_t tid;
 
-    cache_init(&wbuf, MAX_WEB);
-    // cache_init(&cache);
-    // sbuf_init(&sbuf, SBUFSIZE);
+    cache_init();
+    // ignore SIGPIPE, see CSAPP Page987 Aside
+    Signal(SIGPIPE, sigpipe_handler);
 
     // open a listening socket
     listenfd = Open_listenfd(argv[1]);
 
-    // for (int i = 0; i < NTHREADS; i++) {    /* Create worker threads */
-    //     Pthread_create(&tid, NULL, thread, NULL);
-    // }
-
-    // execute the typical infinite server loop
+    // execute the typical infinite server loop, CSAPP 12.3.8
     while (1) {
         clientlen = sizeof(clientaddr);
         // to avoid the potentially deadly race
@@ -62,28 +44,10 @@ int main(int argc, char **argv)
         // repeatedly accept a connection request
         *connfdp = Accept(listenfd, (SA *) &clientaddr, &clientlen);
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
-
-        // sbuf_insert(&sbuf, *connfdp);
-
-        printf("Accepted connection from (%s, %s)\n", hostname, port);
         // perform a transaction
         pthread_create(&tid, NULL, thread, connfdp);
     }
     return 0;
-}
-
-void* thread(void *vargp){
-    int connfd = *((int *) vargp);
-    Pthread_detach(pthread_self());
-    Free(vargp);
-    doit(connfd);
-    Close(connfd);
-    // Pthread_detach(pthread_self());
-    // while (1) {
-    //     int connfd = sbuf_remove(&sbuf);
-    //     doit(connfd);   /* Service client */
-    //     Close(connfd);
-    // }
 }
 
 /* 
@@ -94,24 +58,43 @@ void sigpipe_handler()
     Sio_error("SIGPIPE caught!");
 }
 
-/*
- * doit - handle one HTTP request/response transaction
- *        only GET is implemented
- */
-/* $begin doit */
+void* thread(void *vargp){
+    int connfd = *((int *) vargp);
+    Pthread_detach(pthread_self());
+    Free(vargp);
+    doit(connfd);
+    Close(connfd);
+    return NULL;
+}
+
+/**
+ * doit - handle one HTTP request&response transaction
+ *        only GET method is implemented
+ * @param fd the connected descriptor on proxy
+ * */
 void doit(int fd) 
 {
-    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE];
-    rio_t rio, rio_server;
+    char buf[MAXLINE];                  // general purpose buffer
+    char cache_buf[MAX_OBJECT_SIZE];    // buffer of the object(HTTP response) being cached
+    char buf_size = 0;                  // size of the object(HTTP response) being cached
+    // elements in the request line
+    char method[MAXLINE], url[MAXLINE], urlcpy[MAXLINE], version[MAXLINE];
+    // elements in the URL
+    char hostname[MAXLINE], port[MAXLINE], filename[MAXLINE];
+
+    /*  rio_client is a read buffer of the request from client
+        rio_server is a read buffer of the response from server */
+    rio_t rio_client, rio_server;
 
     /* Read request line and headers */
-    Rio_readinitb(&rio, fd);
-    if (!Rio_readlineb(&rio, buf, MAXLINE))
+    Rio_readinitb(&rio_client, fd);
+    if (!Rio_readlineb(&rio_client, buf, MAXLINE))
         return;
     printf("%s", buf);
+
     /* parse request */
-    sscanf(buf, "%s %s %s", method, uri, version);
+    sscanf(buf, "%s %s %s", method, url, version);
+    strcpy(urlcpy, url); // keep an original URL
     // if the client request another method, e.g., POST, 
     // send the client an error message and return to the main routine,
     // which then closes the connection and awaits the next connection request
@@ -119,68 +102,61 @@ void doit(int fd)
         clienterror(fd, method, "501", "Not Implemented",
                     "Tiny does not implement this method");
         return;
-    }                                                    
-    /* tiny does not use any of the information in the request headers. */
-    /* simply read and ignore any request headers */
-    read_requesthdrs(&rio);                              
+    }
 
-    /* find cache */
-    char *ptr;
-    if ((ptr = cache_find(&wbuf, uri)) != NULL) {
-        Rio_writen(fd, ptr, strlen(ptr));
-        Free(ptr);
+    /* simply read and ignore any request headers */
+    read_requesthdrs(&rio_client);                              
+
+    const char *cached_obj = cache_find(urlcpy);
+    /* if find the requested object in the cache */
+    if( cached_obj ){
+        Rio_writen(fd, cached_obj, strlen(cached_obj));
         return;
     }
-    ptr = Malloc(strlen(uri));
-    strcpy(ptr, uri);
-    // int index;
-    // if ((index = cache_find(&cache, uri)) != -1) {  /* cache hits */
-    //     read_pre(&cache, index);
-    //     Rio_writen(fd, cache.cacheobjs[index].obj, strlen(cache.cacheobjs[index].obj));
-    //     read_after(&cache, index);
-    //     return;
-    // }
 
-    /* Parse URI from GET request */
-    parse_uri(uri, hostname, port, filename);
+    /* if not find, proxy requests data from server */
 
-    // the proxy serves as client now
-    int clientfd = Open_clientfd(hostname, port); 
+    /* Parse URL from GET request */
+    parse_url(url, hostname, port, filename);
+
+    // for the server, the proxy serves as client
+    int clientfd = Open_clientfd(hostname, port);
+    if(clientfd < 0){
+        printf("Connection from proxy to server fails.\n");
+        return;
+    }
+
     // send request to server
     write_request(clientfd, method, filename, hostname, port);
-
-    Rio_readnb(&rio, buf, rio.rio_cnt);
     
+    // associate clientfd with rio_server
     Rio_readinitb(&rio_server, clientfd);
 
-    char cache_buf[MAX_OBJECT_SIZE]; // cache
-    int buf_size = 0, n;
     // read response from the server and send server response to client
-    // why while loop is a must?
+    // why while loop is a must? cause we read line by line until empty line
+    int n;
     while( (n = Rio_readlineb(&rio_server, buf, MAXLINE)) != 0 ){
         buf_size += n;
         if (buf_size < MAX_OBJECT_SIZE) {
             strcat(cache_buf, buf);
         }
-        // Rio_writen(rio.rio_fd, buf, strlen(buf));
-        Rio_writen(rio.rio_fd, buf, n);
+        // send back to the client
+        Rio_writen(rio_client.rio_fd, buf, n);
     }
-        
-
+    
     Close(clientfd);
 
     /* store it in cache */
     if (buf_size < MAX_OBJECT_SIZE) {
-        cache_put(&wbuf, ptr, cache_buf);
+        cache_put(urlcpy, cache_buf);
     }
 }
-/* $end doit */
+
 
 /*
  * read_requesthdrs - read HTTP request headers
  * 
  */
-/* $begin read_requesthdrs */
 void read_requesthdrs(rio_t *rp) 
 {
     char buf[MAXLINE];
@@ -195,20 +171,19 @@ void read_requesthdrs(rio_t *rp)
     }
     return;
 }
-/* $end read_requesthdrs */
 
-/*
- * parse_uri - parse URI into hostname, port, filename
- */
-/* $begin parse_uri */
-int parse_uri(char *uri, char *hostname, char *port, char *filename) 
+/**
+ * parse_url - parse URL into hostname, port, filename
+ *  URL = http:// + hostname + : + port + filename
+ * */
+void parse_url(char *url, char *hostname, char *port, char *filename) 
 {
     char *ptr;
     // ignore http://
-    if( strstr(uri, "http://") ) uri = uri + 7;
+    if( strstr(url, "http://") ) url = url + 7;
 
     // find the filename
-    if (ptr = index(uri, '/')) {
+    if ((ptr = index(url, '/'))) {
         strcpy(filename, ptr);
         *ptr = '\0';
     } 
@@ -217,21 +192,18 @@ int parse_uri(char *uri, char *hostname, char *port, char *filename)
     }
 
     // find the port
-    if (ptr = index(uri, ':')) {
+    if ((ptr = index(url, ':'))) {
         strcpy(port, ptr+1);
         *ptr='\0';
     }
 
     // the rest is the hostname
-    strcpy(hostname, uri);
-    return 0;
+    strcpy(hostname, url);
 }
-/* $end parse_uri */
 
 /*
  * write_request - write HTTP request line and headers to the server
  */
-/* $begin write_request */
 void write_request(int fd, char *method, char *filename, char *hostname, char *port) 
 {
     char buf[MAXLINE];
@@ -247,12 +219,10 @@ void write_request(int fd, char *method, char *filename, char *hostname, char *p
     sprintf(buf, "%s%s\r\n", buf, user_agent_hdr);
     Rio_writen(fd, buf, strlen(buf));
 }
-/* $end write_request */
 
 /*
  * clienterror - returns an error message to the client
  */
-/* $begin clienterror */
 void clienterror(int fd, char *cause, char *errnum, 
 		 char *shortmsg, char *longmsg) 
 {
@@ -276,5 +246,3 @@ void clienterror(int fd, char *cause, char *errnum,
     sprintf(buf, "<hr><em>The Tiny Web server</em>\r\n");
     Rio_writen(fd, buf, strlen(buf));
 }
-/* $end clienterror */
-

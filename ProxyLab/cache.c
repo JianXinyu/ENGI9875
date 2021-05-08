@@ -1,79 +1,144 @@
 #include "csapp.h"
 #include "cache.h"
 
+/* private cache functions */
+int cache_eviction();
+void cache_update(int idx);
 
-
-void cache_init(web_cache *cache, int n)
+void cache_init()
 {
-    cache->n = n;
-    cache->size_all = cache->read_cnt = cache->rear = cache->front = cache->objn_cnt = 0;
-    cache->obj = Calloc(n, sizeof(web_obj));
-    Sem_init(&cache->mutex, 0, 1);
-    Sem_init(&cache->write, 0, 1);
+   for(int i = 0; i < CACHE_OBJS_COUNT; ++i){
+        cache[i].isEmpty = 1;
+        cache[i].stamp   = -1;
+        cache[i].readcnt = 0;
+        Sem_init(&(cache[i].mutex),0,1);
+        Sem_init(&(cache[i].w),0,1);
+   }
 }
 
-char* cache_find(web_cache *cache, char* dst)
+/** 
+ * find the requested URL in the cache
+ * @param url the desired object URL
+ * @return if cached, return index in the cache array
+ *         if not, return -1
+ **/
+const char * cache_find(char *url)
 {
-    P(&cache->mutex);
-    cache->read_cnt++;
-    if (cache->read_cnt == 1)
-        P(&cache->write);
-    V(&cache->mutex);
-    
-    int i, n = cache->n;
-    int l = (cache->front+1) % n, len = cache->objn_cnt;
-    char *ans;
-    for (i = 0; i < len; i++)
+    ret_obj[0] = '\0';
+    for(int i = 0; i < CACHE_OBJS_COUNT; ++i)
     {
-        web_obj *obj = cache->obj + l;
-        if (!strcmp(obj->dst, dst)) {
-            int size = obj->size;
-            ans = Malloc(size);
-            strcpy(ans, obj->cache);
+        P(&(cache[i].mutex));
+        cache[i].readcnt++;
+        if(cache[i].readcnt == 1) /* First in */
+            P(&cache[i].w);
+        V(&cache[i].mutex);
+
+        // if find the desired object
+        if( strcmp(url, cache[i].cache_url) == 0 && cache[i].isEmpty == 0 ){
+            strcpy(ret_obj, cache[i].cache_obj);
+        }
+
+        P(&cache[i].mutex);
+        cache[i].readcnt--;
+        if(cache[i].readcnt == 0) /* Last out */
+            V(&cache[i].w); 
+        V(&cache[i].mutex);
+
+        // if find the desired object
+        if(ret_obj[0]){
+            // update LRU 
+            cache_update(i);
+            return ret_obj;
+        } 
+    }
+    // if not find
+    return NULL;
+}
+
+/**
+ * choose a victim cache block
+ * @return index of victim block with maximal timestamp
+ **/ 
+int cache_eviction()
+{
+    int max_stamp = -1, ret = 0;
+
+    for(int i = 0; i < CACHE_OBJS_COUNT; ++i ){
+        
+        P(&(cache[i].mutex));
+        cache[i].readcnt++;
+        if ( cache[i].readcnt == 1 ) /* First in */
+            P(&cache[i].w);
+        V(&cache[i].mutex);
+
+        // if there is an empty block
+        if(cache[i].isEmpty) {
+            // cache[i].isEmpty = 0;
+            P(&cache[i].mutex);
+            cache[i].readcnt--;
+            if(cache[i].readcnt==0) /* Last out */
+            V(&cache[i].w); 
+            V(&cache[i].mutex);
+
+            ret = i;
             break;
         }
-        l = (l + 1) % n;
+
+        // search for the LRU block
+        if(cache[i].stamp > max_stamp) 
+        {  
+            ret = i;
+            max_stamp = cache[i].stamp;
+        }
+        
+        P(&cache[i].mutex);
+        cache[i].readcnt--;
+        if( cache[i].readcnt == 0 ) /* Last out */
+            V(&cache[i].w); 
+        V(&cache[i].mutex);
     }
-    
-    P(&cache->mutex);
-    cache->read_cnt--;
-    if (cache->read_cnt == 0)
-        V(&cache->write);
-    V(&cache->mutex);
-    if (i == len) return NULL;
-    else return ans;
+
+    return ret;
 }
 
-void cache_put(web_cache *wcache, char* dst, char* cache)
+/**
+ * update timestamps for all cache blocks
+ * @param index the block currently being read or written
+ * */
+void cache_update(int idx)
 {
-    P(&wcache->write);
-    
-    int cnt = wcache->objn_cnt, n = wcache->n;
-    if (cnt == n) {
-        int pos = (wcache->front+1) % n;
-        cache_remove(wcache, pos);
+    for(int i = 0; i < CACHE_OBJS_COUNT; ++i){
+        if(cache[i].isEmpty == 0){
+            P(&cache[idx].w);
+
+            if(i != idx)
+                cache[i].stamp++;
+            else
+                cache[i].stamp = 0;
+            
+            V(&cache[idx].w);
+        }
     }
-    
-    int pos = (++wcache->rear) % n, size = strlen(cache);
-    web_obj *obj = wcache->obj + pos;
-    strcpy(obj->dst, dst);
-    strcpy(obj->cache, cache);
-    obj->size = size;
-    
-    wcache->size_all += size;
-    wcache->objn_cnt++;
-    while(wcache->size_all > MAX_CACHE_SIZE) {
-        int pos = (wcache->front+1) % n;
-        cache_remove(wcache, pos);
-    }
-    
-    V(&wcache->write);
 }
 
-void cache_remove(web_cache *cache, int pos)
+/**
+ * cache a new object
+ * @param url the cached object name
+ * @param buf the content to be cached
+ * */
+void cache_put(char *url,char *buf)
 {
-    web_obj *obj = cache->obj + pos;
-    cache->size_all -= obj->size;
-    cache->front = (cache->front+1) % cache->n;
-    cache->objn_cnt--;
+    // find a proper block index
+    int idx = cache_eviction(); 
+    
+    P(&cache[idx].w);
+    
+    strcpy(cache[idx].cache_url, url);
+    strcpy(cache[idx].cache_obj, buf);
+    cache[idx].isEmpty = 0;
+    
+    V(&cache[idx].w);
+
+    cache_update(idx);
 }
+
