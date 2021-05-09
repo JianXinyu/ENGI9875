@@ -26,7 +26,6 @@ char ret_obj[MAX_OBJECT_SIZE];          // the requested object
 
 /* public cache function */
 void cache_init();
-// int cache_find(char *uri);
 const char * cache_find(char *url);
 void cache_put(char *url,char *buf);
 
